@@ -1,8 +1,9 @@
 # VR mode via OpenXR: feasibility and proposal
 
-Status: **investigation only, nothing implemented.** Written 2026-10-29. Pick this
-up after the racing wheel work has been felt and tuned
-(see [controls.md](controls.md), "Racing wheel and pedals").
+Status: **investigation, started 2026-10-30; nothing implemented in the game yet.**
+Written 2026-10-29; the wheel work is on the `thrustmasterwheel` branches (see
+[controls.md](controls.md), "Racing wheel and pedals"). Findings so far are under
+"Spike results" below.
 
 ## Goal
 
@@ -122,3 +123,50 @@ Recommendation: **A**.
    and an overlay page were offered but not built).
 2. Start phase 1. Work in the toolkit clone (`C:\source\xboxrecomp-takedawn`,
    branch `takedawn`); see [building.md](building.md) and [windows.md](windows.md).
+
+## Spike results (2026-10-30)
+
+`tools/win/xr-probe.c` (built to `bin/xr-probe.exe`; build line in its header) loads the OpenXR
+loader and the Vulkan loader at run time, as the game does for Vulkan, and asks the runtime.
+
+**Stage 1, run (no headset, SteamVR not running, nothing started): SteamVR's OpenXR runtime
+offers 42 instance extensions**, including `XR_KHR_vulkan_enable2` (so the runtime-assisted
+Vulkan instance and device creation the plan relies on exists), `XR_KHR_composition_layer_depth`,
+`XR_KHR_visibility_mask`, `XR_KHR_win32_convert_performance_counter_time`, `XR_FB_display_refresh_rate`,
+`XR_EXT_hand_tracking` and `XR_EXT_debug_utils`. It does **not** offer `XR_KHR_composition_layer_cylinder`
+or `_equirect2`: a curved screen is not available, so theatre mode is a flat quad layer.
+
+**Stages 2 and 3 are not run yet** (`xr-probe --system`): they start SteamVR and want the headset
+connected. They create an OpenXR instance, read the headset's system, the recommended eye size and the
+Vulkan versions it wants, then make a Vulkan 1.3 instance and device through the runtime
+(`xrCreateVulkanInstanceKHR`, `xrGetVulkanGraphicsDevice2KHR`, `xrCreateVulkanDeviceKHR`) and say which GPU it
+picks. That answers the first open question.
+
+**Environment found:** SteamVR is the active runtime (registry `ActiveRuntime`) and ships an OpenXR loader
+(`SteamVRin\win64\openxr_loader.dll`, 1.1.62). The OpenXR headers are the Khronos SDK's
+(`KhronosGroup/OpenXR-SDK` release-1.1.47, Apache-2.0 or MIT) and are fetched into
+`~/.cache/bo3-windeps/openxr/` for now; if this goes in, `fetch-deps.sh` should fetch them the way it
+does the Vulkan headers, and the loader stays a run-time `LoadLibrary` (the system's, else a shipped copy).
+
+**Where it would plug in (read, not changed):**
+
+- The toolkit makes its Vulkan instance in one place and its device in another
+  (`src/d3d/nv2a_vk_core.c`: `vkCreateInstance` around line 155, `vkCreateDevice` around line 381). With a
+  headset these two calls go through `xrCreateVulkanInstanceKHR` / `xrCreateVulkanDeviceKHR`, which take
+  the same create-info and add what the runtime needs, and the physical device is the one
+  `xrGetVulkanGraphicsDevice2KHR` returns (the code today picks its own).
+- The presenter (`src/video/fb_present_vulkan.c`, the present function around line 3200) ends each frame
+  with one `vkCmdBlitImage` of the game's image into the window's swapchain image (around line 3413). Theatre
+  mode is a second blit from the same source image into an OpenXR swapchain image, then `xrEndFrame` with a
+  quad layer: a small, contained change. The window can stay as the mirror.
+- Which camera views exist in a race is still unknown: the docs only say the change-view button (Y) exists.
+  The per-player view object is at `0x7397C8 + player * 0x1CC`; recording it while pressing Y would show the
+  mode field and tell which views there are and whether one is attached to the car.
+
+## Next steps (in order)
+
+1. Run `xr-probe --system` with SteamVR up and the headset connected (needs the owner).
+2. Record the view object while cycling the camera (extend the telemetry recorder) to learn the views.
+3. Phase 1, theatre mode, behind a setting, off by default: OpenXR instance and session created with the
+   toolkit's Vulkan device, a quad layer fed by a second blit, `xrWaitFrame` pacing kept separate from the
+   game's, the wheel for driving.
