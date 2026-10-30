@@ -268,6 +268,19 @@ static void look_input(float *x, float *y)
 #endif
 }
 
+/* The pad's right stick pressed in (R3), for recentring the headset's view (the keyboard's C does too). The pad block is the one
+ * look_input reads: its buttons word is 4 bytes in, the right stick's X at 14. */
+static int pad_recentre(void)
+{
+    uint32_t k;
+    const uint8_t *st;
+
+    for (k = 0; k < 3 && SC_M32(SC_PADS + k * 0x20) != 2; k++)
+        ;
+    st = (const uint8_t *)((uintptr_t)g_xbox_mem_offset + SC_PADS + k * 0x20 + 8);
+    return (st[4] | st[5] << 8) & 0x0080;
+}
+
 #define SC_MAXCARS 256
 #define SC_NSLOT   2
 static struct { uint32_t key; int slot; float v[3]; } s_tab[SC_MAXCARS];
@@ -743,7 +756,7 @@ void bo3_seatcam_apply(void)
             float h, ch, sh, o[3][3];
             int a;
 
-            if (!s_vr_ref_set || (GetAsyncKeyState('C') & 0x8000)) {
+            if (!s_vr_ref_set || (GetAsyncKeyState('C') & 0x8000) || pad_recentre()) {
                 h = atan2f(-ax[2][0], -ax[2][2]);            /* the heading of the head's forward (= -back) */
                 s_vr_ref[0] = h;
                 s_vr_ref[1] = s_vr_pose.p[0];
