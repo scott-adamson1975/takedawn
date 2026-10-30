@@ -207,7 +207,8 @@ static void stereo_begin(uint32_t rc)
     if (!s_rflag_set) {                  /* bloom and motion blur off for the picture */
         s_rflag_keep[0] = fl[12];
         s_rflag_keep[1] = fl[14];
-        fl[12] = fl[14] = 0;
+        if (!getenv("BO3_VR_KEEP_FX"))       /* BO3_VR_KEEP_FX=1: bloom and motion blur stay on (the picture may be brighter) */
+            fl[12] = fl[14] = 0;
         s_rflag_set = 1;
     }
     s_stereo_on = 1;
@@ -870,24 +871,25 @@ void bo3_seatcam_apply(void)
     s_cam.va = cp;
     s_cam.applied = 1;
     near_apply();
-    if (s_vr_pose.id && getenv("BO3_VR_FOV") && *getenv("BO3_VR_FOV") == '1') {   /* the headset's window: an experiment, the title's projection did not follow it (the picture came out tall) */
-        uint32_t rc = SC_M32(SC_VIEW + 0x58u);
+    if (s_vr_pose.id && !(getenv("BO3_VR_FOV") && *getenv("BO3_VR_FOV") == '0')) {
+        /* The headset's field of view. The title builds the view window every frame (sub_001C8A60) from the camera's field
+         * of view (+0x10, 90) and two numbers in the view: x = tan(fov / 2) * view[0x70] and y = x / view[0x74] (1.2 and 16/9:
+         * the widescreen window 1.2 x 0.675), then the view matrix from it. So it is those two numbers that are set, not the
+         * RwCamera's window (the first try: that did not change the picture), and they take effect from the next frame's
+         * build; the layer claims the window each frame was really drawn with (below). */
+        static int told;
+        float *vw = SC_PTR(SC_VIEW);
+        float fov = c[0x10 / 4], t = tanf(fov * 0.5f * 3.14159265f / 180.0f);
+        float hx = s_vr_pose.vwx, hy = s_vr_pose.vwy;
 
-        if (rc > 0x10000u && rc < 0x08000000u) {             /* the headset's window, for its field of view */
-            static int told;
-            float *vwp = SC_PTR(rc) + 0x68 / 4;
-
-            memcpy(s_vw_keep, vwp, sizeof s_vw_keep);
-            s_vw_at = vwp;
-            vwp[0] = s_vr_pose.vwx;
-            vwp[1] = s_vr_pose.vwy;
-            vwp[2] = 1.0f / s_vr_pose.vwx;
-            vwp[3] = 1.0f / s_vr_pose.vwy;
+        if (fov > 20.0f && fov < 170.0f && t > 0.2f && hx > 0.3f && hx < 3.0f && hy > 0.3f && hy < 3.0f) {
             if (!told) {
                 told = 1;
-                slog("[SEATCAM] view window: the title %.4f x %.4f (reciprocals %.4f %.4f) -> the headset's %.4f x %.4f\n",
-                     s_vw_keep[0], s_vw_keep[1], s_vw_keep[2], s_vw_keep[3], s_vr_pose.vwx, s_vr_pose.vwy);
+                slog("[SEATCAM] view window: the title's numbers %.4f and %.4f (fov %.1f) -> the headset's %.4f x %.4f\n",
+                     vw[0x70 / 4], vw[0x74 / 4], fov, hx, hy);
             }
+            vw[0x70 / 4] = hx / t;
+            vw[0x74 / 4] = hx / hy;
         }
     }
     stereo_begin(SC_M32(SC_VIEW + 0x58u));
