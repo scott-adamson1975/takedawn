@@ -324,3 +324,29 @@ most detailed):
 
 So no reliable driver anchor exists in the data examined. The hand-set per-car seat stays; the title's own front camera
 height (0.66 m above the origin in the recording) is the best single reference for head height.
+
+### The driver figure is in the model (2026-10-30, after the owner's screenshot of a red helmet)
+
+The owner's screenshot from the seat shows a driver with a red helmet and a visor, hands on the wheel: **the car
+models do contain a driver figure.** (The earlier note above, that no driver was found, is corrected by this: the
+figure is geometry inside the model, not a separate entry or file.)
+
+Found offline in `pveh/COMP/Car*.bgv`, level 3 (the most detailed), by fitting a sphere of helmet size (r 0.10 to
+0.18 m) to the cabin's vertices at head height:
+
+| Car | Model key (`.bgv` + 8) | Helmet centre (right, up, ahead of the car origin), radius | Evidence |
+|---|---|---|---|
+| Car1 | `0x00090000` | (0.006, 0.718, -0.280), r 0.137 | about 100 vertices on the sphere; the vertex plot shows the dense arc |
+| Car6 | `0x0008A000` | (0.006, 0.718, -0.280) | the same 99 vertices exactly (a template match of 99 of 99): the same driver at the same place |
+
+**It agrees with what the owner did by hand:** the seat-camera log of a run where the numpad was used ends near
+right 0.007 and up 0.73 (before moving ahead), against the helmet's 0.006 and 0.718.
+
+**Not found for the other cars tried** (Car2 to Car5, Car7, Car8): the sphere fit gives weak, scattered results
+(22 to 27 vertices at random places), and the Car1 helmet's exact vertex pattern appears in none of them (about
+10 of 99 points, noise). Each car evidently has its own driver geometry, and a detector built on Car1's does not
+carry over. So today the helmet gives a **default seat for the compact cars only**, seeded in `seatcam.txt` at the
+eye (the visor, about 0.08 m ahead of the helmet centre, a little below its centre): `0x00090000 0 0.006 0.700 -0.200`.
+
+Next for this: find each car's driver by looking at its vertices (plots), or detect it at run time from the model in
+memory with a looser search; the numpad stays as the fix for a car the search misses.
