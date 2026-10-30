@@ -3302,6 +3302,10 @@ int main(int argc, char **argv)
             seconds = (unsigned)strtoul(argv[++i], NULL, 10);
             snprintf(seconds_text, sizeof seconds_text, "%u", seconds);
         }
+        /* --vr, --stereo[=ipd], --seatcam[=r,u,a[,save]], --bonnet=r,u,a[,save]: read by bo3_seatcam_args (seatcam.c). */
+        else if (!strcmp(argv[i], "--vr") || !strncmp(argv[i], "--stereo", 8) || !strncmp(argv[i], "--seatcam", 9)
+                 || !strncmp(argv[i], "--bonnet=", 9)) {
+        }
         else if (argv[i][0] == '-') {
             const char *self = getenv("APPIMAGE");
             if (!self || !*self)
