@@ -304,3 +304,23 @@ of the vertices for a ring 12 to 24 cm in radius facing the driver gave, for fiv
 time, mostly on the centre line, none at a plausible driver's position, so **automatic detection is not reliable**
 and the hand-set per-car points stay. A steering wheel visible in the owner's screenshot sits slightly left of the
 camera's centre line in that car. (The offline reader and ring search are scratch scripts, not in the repo.)
+
+## A driver or helmet as the anchor? (2026-10-30, not found)
+
+The owner reported that the in-car view works and asked whether the car model has a driver whose helmet could anchor
+the seat. Checked offline in `pveh/COMP/Car*.bgv` (level offsets are relative to the level header; level 3 is the
+most detailed):
+
+- No file in the game's data is named for a driver or helmet.
+- A car model has **10 part entries** (the first int of each: `0x90A` the body, `0x203` three times, `0xFF02` three
+  times, `0xFF01`, `0xFF03` twice): none stands out as a driver. Every entry's own frame is the identity, so there
+  is no pivot to read a head position from.
+- The model is not welded: it is about a thousand small pieces, so connected-piece analysis does not isolate a figure.
+- Vertex density in the cabin: in Car1 the densest round ball (about 135 vertices within 14 cm, std about 5 cm
+  each way) is at 0.66 m above the origin, the height of the title's own front camera, which would fit a head; but it
+  is not repeated in other cars (their densest clusters are at about 0.2 m, flat, and the same in several cars: shared
+  parts such as a seat or driveline). One car is not a rule.
+- The owner's screenshots from the seat show a very dark interior with a faint steering-wheel ring and no visible driver.
+
+So no reliable driver anchor exists in the data examined. The hand-set per-car seat stays; the title's own front camera
+height (0.66 m above the origin in the recording) is the best single reference for head height.
