@@ -154,6 +154,21 @@ void bo3_seatcam_apply(void)
     car = SC_PTR(SC_CAR1 + 0x10u);
     calls_n++;
     cp = SC_M32(SC_VIEW + 0x68u);
+    {
+        /* Why does the car's body vanish? The title's car draw (sub_0018DE00) returns at once when the byte at
+         * car + 0x18F8 is 0 or the "vehicles" render flag (0x4D61CE) is 0. Logged when either changes. */
+        static uint32_t last = 0xFFFFFFFFu;
+        uint32_t now = (uint32_t)*(const uint8_t *)((uintptr_t)g_xbox_mem_offset + SC_CAR1 + 0x18F8u)
+                       | (uint32_t)*(const uint8_t *)((uintptr_t)g_xbox_mem_offset + 0x004D61CEu) << 8
+                       | (uint32_t)*(const uint8_t *)((uintptr_t)g_xbox_mem_offset + SC_CAR1 + 0x18FAu) << 16
+                       | (SC_M32(SC_CAR1 + 0x3D0u) & 0xFFu) << 24;
+
+        if (now != last) {
+            last = now;
+            slog("[SEATCAM] render #%u: car draws %u, vehicles flag %u, +0x18FA %u, wreck state %u, phase %u\n", calls_n,
+                 now & 0xFFu, (now >> 8) & 0xFFu, (now >> 16) & 0xFFu, now >> 24, SC_M32(SC_CAR1 + 0x134Cu));
+        }
+    }
     if (SC_M32(SC_CAR1 + 0x134Cu) != 2)
         why = 1;
     else if (SC_M32(SC_CAR1 + 0x3D0u) != 4)

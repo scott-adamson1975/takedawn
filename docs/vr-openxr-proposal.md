@@ -243,5 +243,20 @@ the same override gave the same seat in both views.
 Looking around (the right stick, or J, L, I and K in the test) turns the seat's orientation about the seat point:
 a stand-in for the headset's head tracking.
 
-**What the picture looked like** (the car's body in view, scenery missing sideways or behind, the HUD): to be
-filled in from the owner's observation of this test.
+**What the picture looked like (the owner's report, one 130 s race, seat 1.0 m up and 0.3 m behind the origin):**
+
+- **Scenery** looked right looking around (sideways and up): no missing scenery, no pop-in noticed. This answers
+  the visibility-list worry (open question 6, "The hard parts") for sideways and up; **backwards was not tried**.
+- **The HUD** was perfect (it is drawn separately from the world).
+- **Crashes** used the game's traditional camera (the override stays off for them, as designed).
+- **The car's body** was visible for a moment and then never again; the owner would like some visual reference of
+  the car in a VR view. The cause is not known: the title's car draw (`sub_0018DE00`) returns at once only if the
+  byte at `car + 0x18F8` is 0 or the "vehicles" render flag (`0x4D61CE`) is 0, and the byte read 1 in every frame of
+  both the front and chase views in the camera recording, so the draw is called in both. The seat camera now logs
+  those two bytes (and the wreck state) whenever one changes (`seat1-seatcam.log`), so the next run shows when the
+  body vanishes and what flips. Possibilities not yet separated: the body is not drawn from inside it (backface
+  culling), it is hidden by the title after a crash and respawn, or it is skipped by the model draw (`sub_000303D0`)
+  for a camera that close.
+
+**Where this leaves the plan:** the in-car view is feasible without visibility work for the directions tried; a
+visible car (bonnet, nose) is the open point and is a design choice as much as a bug: real cockpits have a body.
