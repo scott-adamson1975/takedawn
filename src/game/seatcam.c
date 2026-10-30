@@ -5,8 +5,9 @@
  * car's origin (where the title's own low front camera sits), 0.15 m ahead of it.
  *
  * How: the stage's render (sub_0001A6A0) begins by building the camera's frame and the view matrix from the
- * game's camera object (sub_001C8A60; the race's view is at 0x4D6200, the camera object at its + 0x68, laid out
- * like a car's RwMatrix: three axes at 0x10 apart and the position at + 0x30; hirefresh.c). The "uw_stage_render"
+ * game's camera object (sub_001C8A60; the race's view is at 0x4D6200, the camera object at its + 0x68: + 0x20 the
+ * orientation as a quaternion (x, y, z, w), + 0x30 the position; the first attempt wrote matrix rows there and
+ * the world was gone; hirefresh.c). The "uw_stage_render"
  * mark is that function's entry, so bo3_seatcam_apply() writes the seat there, and bo3_seatcam_restore() puts
  * the camera object back at the next flip (the title's camera follows its own state from step to step; our
  * values must not leak into it). A mark runs only its first handler, so main.c calls both.
@@ -223,10 +224,53 @@ void bo3_seatcam_apply(void)
             U2[i] = cp2 * U[i] - sp2 * F2[i];
             F2[i] = f3;
         }
-        for (i = 0; i < 3; i++) {
-            n[i] = L2[i];
-            n[4 + i] = U2[i];
-            n[8 + i] = F2[i];
+        /* The camera object is not a matrix (its first log dump: row 0 zero, row 1 starting 90.0, row 2 a unit
+         * quaternion, row 3 the position): + 0x20 holds the orientation as a quaternion (x, y, z, w) and + 0x30
+         * the position. The quaternion is the standard one of the rotation whose COLUMNS are the camera's x, y
+         * and z axes in the world: the car's left, up and forward (checked on the first dump: the chase camera's
+         * (0.020, -0.811, 0.028, 0.585) against the car's (-0.001, -0.810, -0.001, 0.586), the chase camera
+         * tilted a little down). The rest of rows 0 to 2 (the field of view and the like) is left as the title set it. */
+        {
+            float m00 = L2[0], m10 = L2[1], m20 = L2[2];     /* column 0: left */
+            float m01 = U2[0], m11 = U2[1], m21 = U2[2];     /* column 1: up */
+            float m02 = F2[0], m12 = F2[1], m22 = F2[2];     /* column 2: forward */
+            float tr = m00 + m11 + m22, qx, qy, qz, qw, sc;
+
+            if (tr > 0.0f) {
+                sc = sqrtf(tr + 1.0f) * 2.0f;
+                qw = 0.25f * sc;
+                qx = (m21 - m12) / sc;
+                qy = (m02 - m20) / sc;
+                qz = (m10 - m01) / sc;
+            } else if (m00 > m11 && m00 > m22) {
+                sc = sqrtf(1.0f + m00 - m11 - m22) * 2.0f;
+                qw = (m21 - m12) / sc;
+                qx = 0.25f * sc;
+                qy = (m01 + m10) / sc;
+                qz = (m02 + m20) / sc;
+            } else if (m11 > m22) {
+                sc = sqrtf(1.0f + m11 - m00 - m22) * 2.0f;
+                qw = (m02 - m20) / sc;
+                qx = (m01 + m10) / sc;
+                qy = 0.25f * sc;
+                qz = (m12 + m21) / sc;
+            } else {
+                sc = sqrtf(1.0f + m22 - m00 - m11) * 2.0f;
+                qw = (m10 - m01) / sc;
+                qx = (m02 + m20) / sc;
+                qy = (m12 + m21) / sc;
+                qz = 0.25f * sc;
+            }
+            if (qw < 0.0f) {
+                qx = -qx;
+                qy = -qy;
+                qz = -qz;
+                qw = -qw;
+            }
+            n[8] = qx;
+            n[9] = qy;
+            n[10] = qz;
+            n[11] = qw;
         }
     }
     for (i = 0; i < 3; i++) {
