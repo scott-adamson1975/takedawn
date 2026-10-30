@@ -143,7 +143,7 @@ Vulkan versions it wants, then make a Vulkan 1.3 instance and device through the
 picks. That answers the first open question.
 
 **Environment found:** SteamVR is the active runtime (registry `ActiveRuntime`) and ships an OpenXR loader
-(`SteamVRin\win64\openxr_loader.dll`, 1.1.62). The OpenXR headers are the Khronos SDK's
+(`SteamVR/bin/win64/openxr_loader.dll`, 1.1.62). The OpenXR headers are the Khronos SDK's
 (`KhronosGroup/OpenXR-SDK` release-1.1.47, Apache-2.0 or MIT) and are fetched into
 `~/.cache/bo3-windeps/openxr/` for now; if this goes in, `fetch-deps.sh` should fetch them the way it
 does the Vulkan headers, and the loader stays a run-time `LoadLibrary` (the system's, else a shipped copy).
