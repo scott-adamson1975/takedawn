@@ -178,8 +178,6 @@ static void stereo_begin(uint32_t rc)
 
     if (!(s_ipd > 0.0f))
         return;
-    if (s_vr_pose.id)
-        vw = f[0x68 / 4];                /* the headset's window, written by the apply */
     if (vw > 0.2f && vw < 5.0f && fabsf(vw * rcp - 1.0f) < 0.02f)
         p00 = 1.0f / vw;
     k = p00 * (s_vr_pose.id ? s_vr_pose.ipd : s_ipd) * 0.5f;
@@ -839,7 +837,7 @@ void bo3_seatcam_apply(void)
     s_cam.va = cp;
     s_cam.applied = 1;
     near_apply();
-    if (s_vr_pose.id) {
+    if (s_vr_pose.id && getenv("BO3_VR_FOV")) {              /* off unless asked: the first test with it showed the scene doubled */
         uint32_t rc = SC_M32(SC_VIEW + 0x58u);
 
         if (rc > 0x10000u && rc < 0x08000000u) {             /* the headset's window, for its field of view */
