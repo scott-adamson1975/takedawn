@@ -195,6 +195,11 @@ void bo3_telemetry_sample(uint32_t car);
 
 /* RECOMP_WHEEL_FFB_SPEED / RECOMP_WHEEL_FFB_RACE_ONLY: tells the wheel glue the car (wheelfeed.c). Before drive_log_start. */
 void bo3_wheel_feed_start(void);
+
+/* BO3_SEATCAM=<right>,<up>,<ahead>: the race drawn from a seat in the car (seatcam.c; a VR test). apply: at the stage render mark; restore: at the flip. */
+void bo3_seatcam_start(void);
+void bo3_seatcam_apply(void);
+void bo3_seatcam_restore(void);
 void bo3_telemetry_impact(float strength, const float dir[3]);  /* carstate.c's collision mark */
 
 /* interface.menu_entry: TAKEDAWN SETTINGS in the title's Settings menu (menuentry.c, BO-133). */

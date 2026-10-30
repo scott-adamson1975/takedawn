@@ -27,6 +27,7 @@ if(ANDROID)
         softbody.c
         telemetry.c
         wheelfeed.c
+        seatcam.c
         carstate.c
         menuentry.c
         tutorial.c
@@ -61,6 +62,7 @@ add_executable(burnout3
     softbody.c
     telemetry.c
     wheelfeed.c
+    seatcam.c
     carstate.c
     menuentry.c
     tutorial.c
