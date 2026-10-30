@@ -179,3 +179,41 @@ does the Vulkan headers, and the loader stays a run-time `LoadLibrary` (the syst
 3. Phase 1, theatre mode, behind a setting, off by default: OpenXR instance and session created with the
    toolkit's Vulkan device, a quad layer fed by a second blit, `xrWaitFrame` pacing kept separate from the
    game's, the wheel for driving.
+
+## Camera views (recorded 2026-10-30, 137 s of a normal race, 8 presses of change-view)
+
+`BO3_TELEMETRY` now also records the camera (`tools/telemetry/find_views.py`). Position is relative to the
+player's car origin, in the car's frame (x right, y up, z ahead).
+
+| View | Where | Notes |
+|---|---|---|
+| **Low front ("bumper") camera** | right 0.00 (+/-0.09), up **+0.66**, ahead **+1.15 at a standstill, sliding back to about 0.0 above 60 m/s** | Rigid to the car: the view matrix's forward axis matches the car's forward at 0.99. 5133 of 8241 frames. Up is constant (0.64 to 0.66). |
+| **Chase camera** | up +1.4 to +1.5, ahead about -5.0 to -6.1, sways sideways in corners (right std 1.4) | 2781 frames. |
+| Others (crash cameras, other angles) | 3 to 10 m away, anywhere | 327 frames, 4 percent. |
+
+The change-view button toggled between the first two; no third driving view was seen in these 8 presses.
+The view object (`0x7397C8`, 0x1CC bytes) has no slot that clearly holds the mode: the best candidates changed
+near only 2 of 8 presses. The mode is not needed for VR: the camera is placed from the car's matrix.
+
+**What it means for VR**
+
+- **There is a usable in-car view.** The low front camera is on the car's centre line, rigid to the car, and
+  its height of 0.66 m above the car's origin is about eye height: the wheel centres sit about 0.06 m below
+  the origin and the wheel radius fitted from the spin is about 0.35 m, so the ground is about 0.4 m below the
+  origin and the camera is about 1.07 m above the road. The scale is real metres, so a 1:1 headset view works.
+- **Phase 2 would use its own camera**, not the game's: each frame, the car's matrix plus a seat offset
+  (centre line, up +0.66, ahead a fixed 0.0 to 0.2) plus the head pose from OpenXR. The slide of the front camera
+  (1.2 m back with speed) must not be copied: a seat that moves under the player is uncomfortable.
+- **Comfort filters** apply to the car's rotation: its roll and pitch spikes in a landing or a hit should be
+  low-passed before they drive the view.
+- **Crash cameras, replays, results, menus** (the 4 percent, and every non-race screen): a virtual screen
+  (theatre mode), not a 1:1 view. The test for "in a race with the car view" is the car's phase being 2.
+- Not yet known: whether the car's body is drawn from this camera's position (a bonnet and nose in view, or
+  a hidden model), and how it looks with the camera slid to the fixed seat point.
+
+## Updated next steps
+
+1. Phase 1 (theatre mode) is still the first deliverable; it is independent of the camera findings.
+2. Before phase 2: draw the stage twice from a test camera (no headset) to check the render is safe to
+   re-enter and the car looks right from the seat point (answers "is the stage render safe to call twice").
+3. Resolution: the recommended 2528x2704 per eye is far above the game's 4x cap (2560x1920 total, 640x480 base).
