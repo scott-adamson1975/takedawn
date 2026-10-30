@@ -48,6 +48,7 @@ extern ptrdiff_t g_xbox_mem_offset;
 #define SC_CAR1   0x0073A1D0u
 #define SC_VIEW   0x004D6200u
 #define SC_MAX_D  8.0f
+#define SC_FRONT_D 2.5f                /* the title camera nearer than this to the car: its front view (no car drawn) */
 #define SC_PADS   0x004AE20Cu         /* the pad manager's four records (main.c's drive_log) */
 #define SC_LOOK_YAW   (150.0f * 3.14159265f / 180.0f)
 #define SC_LOOK_PITCH (60.0f * 3.14159265f / 180.0f)
@@ -77,7 +78,7 @@ static struct {
 static float s_yaw, s_pitch;            /* the look now, radians: right and up positive */
 
 /* The per-car seat (below): declared here for the start-up code. */
-static float s_cur[3];                  /* the seat now: right, up, ahead */
+static float s_cur[2][3];               /* slot 0 the seat, slot 1 over the bonnet: right, up, ahead */
 static char s_file[600] = "seatcam.txt";
 static void tab_load(void);
 
@@ -194,7 +195,6 @@ void bo3_seatcam_start(void)
         if (sf && *sf)
             snprintf(s_file, sizeof s_file, "%s", sf);
     }
-    memcpy(s_cur, s_seat, sizeof s_cur);
     tab_load();
     slog("[SEATCAM] near plane while seated: %.3f m (0 = the title's)\n", s_near);
     fprintf(stderr, "[SEATCAM] on: the race is drawn from the car, right %.2f up %.2f ahead %.2f m (BO3_SEATCAM)\n",
@@ -226,18 +226,34 @@ void bo3_seatcam_restore(void)
         memcpy(SC_PTR(s_cam.va), s_cam.orig, sizeof s_cam.orig);
 }
 
-/* ---- the seat for each car -----------------------------------------------
+/* ---- the views, and the seat for each car -------------------------------
  *
- * Cars differ: a small coupe sits lower and further back than a big saloon, and a US car has its wheel on the left
- * where a UK one has it on the right. The seat is kept per car model and set by hand, in the game: the numpad moves
- * it (4 and 6 left and right, 8 and 2 ahead and back, 9 and 3 up and down, about 0.4 m a second), 5 puts it back to
- * the default, 0 saves it for this car. A car is known by the size field of its model, the .bgv (car + 0x50, its
- * + 8: unique to a model, the same every run). The table is a text file, one car a line: "0x<key> <right> <up> <ahead>",
- * BO3_SEATCAM_FILE=<path> (default seatcam.txt in the game's folder). A car with no line has the default seat. */
-#define SC_MAXCARS 128
-static struct { uint32_t key; float v[3]; } s_tab[SC_MAXCARS];
+ * What the title shows depends on its own view (change-view toggles it): in its chase view the player's car is
+ * drawn, in its front view it is not. The seat camera follows that:
+ *   car drawn (the title's chase view): slot 0, the DRIVER'S SEAT, behind the steering wheel: a US car's wheel is
+ *     on the left, a UK one's on the right, so the seat is off the centre line by a different amount in each car.
+ *     The key V cycles the seat with a CLOSE CHASE and a FAR CHASE view (the car seen from behind).
+ *   car not drawn (the title's front view): slot 1, OVER THE BONNET: there is no body to sit in, so it is centred
+ *     by default, above and a little ahead of the cabin.
+ * Cars differ in size, so slots 0 and 1 are kept per car and set by hand in the game: the numpad moves the
+ * active one (4 and 6 left and right, 8 and 2 ahead and back, 9 and 3 up and down, about 0.4 m a second), 5 puts
+ * it back to the saved or default one, 0 saves it for this car. A car is known by the size field of its model, the
+ * .bgv (car + 0x50, its + 8: unique to a model, the same every run). The table is a text file, one slot of one
+ * car a line: "0x<key> <slot> <right> <up> <ahead>" (a line of four numbers is slot 0),
+ * BO3_SEATCAM_FILE=<path> (default seatcam.txt in the game's folder). The chase views are fixed. */
+#define SC_MAXCARS 256
+#define SC_NSLOT   2
+static struct { uint32_t key; int slot; float v[3]; } s_tab[SC_MAXCARS];
 static int s_ntab;
-static uint32_t s_curkey;               /* the car it is for; 0 none yet */
+static uint32_t s_curkey;               /* the car the slots are for; 0 none yet */
+static int s_alt;                       /* 0 the seat, 1 the close chase, 2 the far chase (V), while the car is drawn */
+static const struct { const char *name; float v[3]; float pitch_deg; } k_alt[3] = {
+    { "the driver's seat", { 0, 0, 0 }, 0.0f },
+    { "close chase", { 0.0f, 1.7f, -4.3f }, -7.0f },
+    { "far chase", { 0.0f, 2.9f, -9.5f }, -10.0f },
+};
+static float s_bonnet[3] = { 0.0f, 1.1f, 0.35f };    /* the default over-the-bonnet point */
+static float s_pitch_bias;              /* the view's own tilt, radians (up positive) */
 
 static void tab_load(void)
 {
@@ -248,10 +264,19 @@ static void tab_load(void)
         return;
     while (fgets(line, sizeof line, f) && s_ntab < SC_MAXCARS) {
         unsigned k;
+        int sl;
         float a, b, c;
 
-        if (sscanf(line, "%x %f %f %f", &k, &a, &b, &c) == 4) {
+        if (sscanf(line, "%x %d %f %f %f", &k, &sl, &a, &b, &c) == 5 && sl >= 0 && sl < SC_NSLOT) {
             s_tab[s_ntab].key = k;
+            s_tab[s_ntab].slot = sl;
+            s_tab[s_ntab].v[0] = a;
+            s_tab[s_ntab].v[1] = b;
+            s_tab[s_ntab].v[2] = c;
+            s_ntab++;
+        } else if (sscanf(line, "%x %f %f %f", &k, &a, &b, &c) == 4) {
+            s_tab[s_ntab].key = k;
+            s_tab[s_ntab].slot = 0;
             s_tab[s_ntab].v[0] = a;
             s_tab[s_ntab].v[1] = b;
             s_tab[s_ntab].v[2] = c;
@@ -259,33 +284,43 @@ static void tab_load(void)
         }
     }
     fclose(f);
-    slog("[SEATCAM] %d car seats read from %s\n", s_ntab, s_file);
+    slog("[SEATCAM] %d saved views read from %s\n", s_ntab, s_file);
 }
 
-static void tab_save(uint32_t key)
+static int tab_find(uint32_t key, int slot)
 {
-    FILE *f;
     int i;
 
-    for (i = 0; i < s_ntab && s_tab[i].key != key; i++)
-        ;
-    if (i == s_ntab) {
+    for (i = 0; i < s_ntab; i++)
+        if (s_tab[i].key == key && s_tab[i].slot == slot)
+            return i;
+    return -1;
+}
+
+static void tab_save(uint32_t key, int slot)
+{
+    FILE *f;
+    int i = tab_find(key, slot);
+
+    if (i < 0) {
         if (s_ntab >= SC_MAXCARS)
             return;
-        s_ntab++;
+        i = s_ntab++;
     }
     s_tab[i].key = key;
-    memcpy(s_tab[i].v, s_cur, sizeof s_cur);
+    s_tab[i].slot = slot;
+    memcpy(s_tab[i].v, s_cur[slot], sizeof s_cur[slot]);
     f = fopen(s_file, "w");
     if (!f) {
         slog("[SEATCAM] cannot write %s\n", s_file);
         return;
     }
     for (i = 0; i < s_ntab; i++)
-        fprintf(f, "0x%08X %.3f %.3f %.3f\n", s_tab[i].key, s_tab[i].v[0], s_tab[i].v[1], s_tab[i].v[2]);
+        fprintf(f, "0x%08X %d %.3f %.3f %.3f\n", s_tab[i].key, s_tab[i].slot, s_tab[i].v[0], s_tab[i].v[1],
+                s_tab[i].v[2]);
     fclose(f);
-    slog("[SEATCAM] seat for car 0x%08X saved to %s: right %.3f up %.3f ahead %.3f\n", key, s_file, s_cur[0], s_cur[1],
-         s_cur[2]);
+    slog("[SEATCAM] %s for car 0x%08X saved to %s: right %.3f up %.3f ahead %.3f\n",
+         slot ? "the over-bonnet point" : "the seat", key, s_file, s_cur[slot][0], s_cur[slot][1], s_cur[slot][2]);
 }
 
 /* The key of the player's car: its model's size field, or 0. */
@@ -298,49 +333,72 @@ static uint32_t car_key(void)
     return SC_M32(bgv + 8u);
 }
 
-/* Called once a render while seated: the seat for this car, and the numpad's nudges. */
-static void seat_update(void)
+static void slot_default(int slot, float *out)
+{
+    memcpy(out, slot ? s_bonnet : s_seat, sizeof s_cur[0]);
+}
+
+/* Called once a render while the camera is ours. front: the title is in its front view (the car is not drawn).
+ * Returns the point to use (right, up, ahead) and sets s_pitch_bias. */
+static const float *seat_update(int front)
 {
     uint32_t key = car_key();
-    int i;
+    int slot = front ? 1 : 0, i;
+    static int v_down;
 
-    if (key != s_curkey || (s_curkey == 0 && s_cur[1] == 0.0f)) {
+    if (key != s_curkey || (s_curkey == 0 && s_cur[0][1] == 0.0f && s_cur[1][1] == 0.0f)) {
         s_curkey = key;
-        memcpy(s_cur, s_seat, sizeof s_cur);
-        for (i = 0; i < s_ntab; i++)
-            if (s_tab[i].key == key && key) {
-                memcpy(s_cur, s_tab[i].v, sizeof s_cur);
-                break;
-            }
-        slog("[SEATCAM] car model 0x%08X: seat right %.3f up %.3f ahead %.3f (%s)\n", key, s_cur[0], s_cur[1], s_cur[2],
-             i < s_ntab && key ? "from the file" : "the default");
+        for (i = 0; i < SC_NSLOT; i++) {
+            int t = key ? tab_find(key, i) : -1;
+
+            if (t >= 0)
+                memcpy(s_cur[i], s_tab[t].v, sizeof s_cur[i]);
+            else
+                slot_default(i, s_cur[i]);
+            slog("[SEATCAM] car model 0x%08X, %s: right %.3f up %.3f ahead %.3f (%s)\n", key,
+                 i ? "over the bonnet" : "the seat", s_cur[i][0], s_cur[i][1], s_cur[i][2], t >= 0 ? "saved" : "the default");
+        }
     }
 #ifdef _WIN32
-    {
+    if (GetAsyncKeyState('V') & 0x8000) {
+        if (!v_down) {
+            v_down = 1;
+            s_alt = (s_alt + 1) % 3;
+            slog("[SEATCAM] view: %s\n", k_alt[s_alt].name);
+        }
+    } else {
+        v_down = 0;
+    }
+    if (front || !s_alt) {
         static int saved_down, reset_down;
         const float step = 0.4f / 60.0f;                    /* 0.4 m a second at 60 renders a second */
+        float *c = s_cur[slot];
         int moved = 0;
 
-        if (GetAsyncKeyState(VK_NUMPAD6) & 0x8000) { s_cur[0] += step; moved = 1; }   /* right */
-        if (GetAsyncKeyState(VK_NUMPAD4) & 0x8000) { s_cur[0] -= step; moved = 1; }   /* left */
-        if (GetAsyncKeyState(VK_NUMPAD8) & 0x8000) { s_cur[2] += step; moved = 1; }   /* ahead */
-        if (GetAsyncKeyState(VK_NUMPAD2) & 0x8000) { s_cur[2] -= step; moved = 1; }   /* back */
-        if (GetAsyncKeyState(VK_NUMPAD9) & 0x8000) { s_cur[1] += step; moved = 1; }   /* up */
-        if (GetAsyncKeyState(VK_NUMPAD3) & 0x8000) { s_cur[1] -= step; moved = 1; }   /* down */
+        if (GetAsyncKeyState(VK_NUMPAD6) & 0x8000) { c[0] += step; moved = 1; }   /* right */
+        if (GetAsyncKeyState(VK_NUMPAD4) & 0x8000) { c[0] -= step; moved = 1; }   /* left */
+        if (GetAsyncKeyState(VK_NUMPAD8) & 0x8000) { c[2] += step; moved = 1; }   /* ahead */
+        if (GetAsyncKeyState(VK_NUMPAD2) & 0x8000) { c[2] -= step; moved = 1; }   /* back */
+        if (GetAsyncKeyState(VK_NUMPAD9) & 0x8000) { c[1] += step; moved = 1; }   /* up */
+        if (GetAsyncKeyState(VK_NUMPAD3) & 0x8000) { c[1] -= step; moved = 1; }   /* down */
         if (moved) {
             static unsigned t;
 
             if ((t++ % 30) == 0)
-                slog("[SEATCAM] seat now right %.3f up %.3f ahead %.3f\n", s_cur[0], s_cur[1], s_cur[2]);
+                slog("[SEATCAM] %s now right %.3f up %.3f ahead %.3f\n", slot ? "over the bonnet" : "the seat", c[0],
+                     c[1], c[2]);
         }
         if (GetAsyncKeyState(VK_NUMPAD5) & 0x8000) {
             if (!reset_down) {
+                int t = s_curkey ? tab_find(s_curkey, slot) : -1;
+
                 reset_down = 1;
-                for (i = 0; i < s_ntab && s_tab[i].key != s_curkey; i++)
-                    ;
-                memcpy(s_cur, i < s_ntab && s_curkey ? s_tab[i].v : s_seat, sizeof s_cur);
-                slog("[SEATCAM] seat reset to %s: right %.3f up %.3f ahead %.3f\n",
-                     i < s_ntab && s_curkey ? "the saved one" : "the default", s_cur[0], s_cur[1], s_cur[2]);
+                if (t >= 0)
+                    memcpy(c, s_tab[t].v, sizeof s_cur[0]);
+                else
+                    slot_default(slot, c);
+                slog("[SEATCAM] reset to %s: right %.3f up %.3f ahead %.3f\n", t >= 0 ? "the saved one" : "the default",
+                     c[0], c[1], c[2]);
             }
         } else {
             reset_down = 0;
@@ -349,7 +407,7 @@ static void seat_update(void)
             if (!saved_down) {
                 saved_down = 1;
                 if (s_curkey)
-                    tab_save(s_curkey);
+                    tab_save(s_curkey, slot);
                 else
                     slog("[SEATCAM] this car has no model key: not saved\n");
             }
@@ -358,6 +416,12 @@ static void seat_update(void)
         }
     }
 #endif
+    if (!front && s_alt) {
+        s_pitch_bias = k_alt[s_alt].pitch_deg * 3.14159265f / 180.0f;
+        return k_alt[s_alt].v;
+    }
+    s_pitch_bias = 0.0f;
+    return s_cur[slot];
 }
 
 void bo3_seatcam_apply(void)
@@ -367,6 +431,7 @@ void bo3_seatcam_apply(void)
     uint32_t cp;
     int why = 0;
     float *c, *car, d[3], dist, n[16];
+    const float *sv;
     int i;
 
     if (!s_on || !g_xbox_mem_offset)
@@ -432,7 +497,7 @@ void bo3_seatcam_apply(void)
     applied_n++;
     if (applied_n % 600 == 0)
         slog("[SEATCAM] %u renders drawn from the seat so far\n", applied_n);
-    seat_update();
+    sv = seat_update(dist < SC_FRONT_D);
     memcpy(n, c, sizeof n);
     {
         /* The look: turn the car's axes about the seat. Written in the axes themselves (left, up, forward) so
@@ -442,7 +507,7 @@ void bo3_seatcam_apply(void)
 
         look_input(&lx, &ly);
         ty = lx * SC_LOOK_YAW;
-        tp = ly * SC_LOOK_PITCH;
+        tp = ly * SC_LOOK_PITCH + s_pitch_bias;
         s_yaw += (ty - s_yaw) * 0.15f;                       /* eases, a frame at a time */
         s_pitch += (tp - s_pitch) * 0.15f;
         cy = cosf(s_yaw);
@@ -512,7 +577,7 @@ void bo3_seatcam_apply(void)
     }
     for (i = 0; i < 3; i++) {
         /* position: right (= -row 0) * x + up * y + forward * z, from the car's origin */
-        n[12 + i] = car[12 + i] - s_cur[0] * car[i] + s_cur[1] * car[4 + i] + s_cur[2] * car[8 + i];
+        n[12 + i] = car[12 + i] - sv[0] * car[i] + sv[1] * car[4 + i] + sv[2] * car[8 + i];
     }
     memcpy(s_cam.orig, c, sizeof s_cam.orig);
     memcpy(s_cam.wrote, n, sizeof s_cam.wrote);

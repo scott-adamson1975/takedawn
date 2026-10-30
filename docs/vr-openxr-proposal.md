@@ -280,3 +280,27 @@ button turns the car's body off and on.
   seat could later be derived from the wheelbase and track.
 - **The car turning off**: not the draw byte (`car + 0x18F8`) nor the vehicles flag at the render's start (both 1 in
   both views); the log now also reads them at the flip, to see whether the title changes them during the render.
+
+## Views by the car's state, and the steering wheel question (2026-10-30)
+
+**Views.** The title's change-view toggles two views, and the car is drawn in one (chase) and not in the other (front).
+The seat camera follows that (`seatcam.c`):
+
+| The title's view | Car drawn? | The camera |
+|---|---|---|
+| Chase (its camera 5 m behind) | yes | **the driver's seat**, behind the steering wheel, off the centre line by a per-car amount; the key V also cycles a **close chase** (1.7 up, 4.3 back, 7 degrees down) and a **far chase** (2.9 up, 9.5 back, 10 degrees down) |
+| Front (its camera 1.3 m from the car) | no | **over the bonnet**, centred by default (1.1 up, 0.35 ahead), nothing of the car to sit in |
+
+Which view the title is in is read from how far its own camera is from the car (under 2.5 m: the front view). Both
+the seat and the over-bonnet point are kept per car (file `seatcam.txt`: `0x<model key> <slot> <right> <up> <ahead>`,
+slot 0 the seat, 1 over the bonnet) and set in the game with the numpad (4/6 left and right, 8/2 ahead and back, 9/3
+up and down, 5 reset, 0 save). The chase views are fixed numbers and rigid to the car.
+
+**An identifiable steering wheel in the model?** Looked for, not found. A car's `.bgv` has up to 16 entries (body,
+doors, bumpers, bonnet, boot, wheels) and no separate steering wheel entry; any wheel is triangles inside the
+body entry. The model files can be read offline (`pveh/COMP/Car*.bgv`; a level's vertex-buffer offsets are relative
+to the level header, level 3 the most detailed at about 5000 to 7000 vertices; wheel hubs are in the header). A search
+of the vertices for a ring 12 to 24 cm in radius facing the driver gave, for five cars, a different best ring each
+time, mostly on the centre line, none at a plausible driver's position, so **automatic detection is not reliable**
+and the hand-set per-car points stay. A steering wheel visible in the owner's screenshot sits slightly left of the
+camera's centre line in that car. (The offline reader and ring search are scratch scripts, not in the repo.)
