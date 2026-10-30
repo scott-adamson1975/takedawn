@@ -42,6 +42,11 @@
 
 extern ptrdiff_t g_xbox_mem_offset;
 int xbox_VrInit(void);                  /* toolkit src/video/oxr.h */
+typedef struct xbox_vr_pose {           /* the same layout as oxr.h's */
+    float    q[4], p[3], ipd, vwx, vwy;
+    unsigned id;
+} xbox_vr_pose;
+int xbox_VrPose(xbox_vr_pose *out);
 
 #define SC_PTR(va)  ((float *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define SC_M32(va)  (*(const uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
@@ -76,6 +81,11 @@ static struct {
     float orig[16], wrote[16];
 } s_cam;
 
+static xbox_vr_pose s_vr_pose;          /* the headset pose this render is drawn from (id 0: none) */
+static float s_vr_ref[4];               /* the recentre: the yaw (radians) and the head position then */
+static int s_vr_ref_set;
+static float s_vr_off[3];               /* the head's move from the recentre, along the world axes */
+static float s_vw_keep[4], *s_vw_at;    /* the title's view window, put back at the flip */
 static float s_yaw, s_pitch;            /* the look now, radians: right and up positive */
 static int s_vr;                        /* --vr: a headset system was found (the toolkit's xbox_VrInit) */
 static float s_ipd;                     /* the eye separation, metres; 0 = no stereo (BO3_SEATCAM_STEREO, --stereo[=ipd]) */
@@ -168,12 +178,13 @@ static void stereo_begin(uint32_t rc)
 
     if (!(s_ipd > 0.0f))
         return;
+    if (s_vr_pose.id)
+        vw = f[0x68 / 4];                /* the headset's window, written by the apply */
     if (vw > 0.2f && vw < 5.0f && fabsf(vw * rcp - 1.0f) < 0.02f)
         p00 = 1.0f / vw;
-    k = p00 * s_ipd * 0.5f;
+    k = p00 * (s_vr_pose.id ? s_vr_pose.ipd : s_ipd) * 0.5f;
     {
-        /* nv2a_pb_state.h's nv2a_stereo_pack: K 12 bits (2e-5), the view window half width and height 9 bits (1/128) */
-        float vwy = f[0x68 / 4 + 1];
+                float vwy = f[0x68 / 4 + 1];
         uint32_t a = (uint32_t)(k / 2e-5f + 0.5f), b = (uint32_t)(vw * 128.0f + 0.5f), c;
 
         if (!(vwy > 0.2f && vwy < 5.0f))
@@ -182,8 +193,11 @@ static void stereo_begin(uint32_t rc)
         if (a > 4095u) a = 4095u;
         if (b > 511u) b = 511u;
         if (c > 511u) c = 511u;
-        s_stereo_scene = SC_STEREO_ON | a << 18 | b << 9 | c;
-        s_stereo_ui = SC_STEREO_ON | b << 9 | c;
+        (void)b;
+        (void)c;
+        /* nv2a_pb_state.h's nv2a_stereo_pack: K in the top 12 bits, then the pose id (8 bits) */
+        s_stereo_scene = SC_STEREO_ON | a << 18 | (s_vr_pose.id & 0xFFu) << 10;
+        s_stereo_ui = SC_STEREO_ON | (s_vr_pose.id & 0xFFu) << 10;
     }
     if (!logged) {
         logged = 1;
@@ -410,6 +424,11 @@ void bo3_seatcam_restore(void)
         }
     }
     near_restore();
+    if (s_vw_at) {
+        memcpy(s_vw_at, s_vw_keep, sizeof s_vw_keep);
+        s_vw_at = NULL;
+    }
+    s_vr_pose.id = 0;
     stereo_end();
     if (!s_cam.applied)
         return;
@@ -689,6 +708,11 @@ void bo3_seatcam_apply(void)
         float lx, ly, ty, tp, cy, sy, cp2, sp2, L[3], U[3], F[3], L2[3], F2[3], U2[3];
 
         look_input(&lx, &ly);
+        if (s_vr && xbox_VrPose(&s_vr_pose)) {
+            lx = ly = 0.0f;                                  /* the head looks, not the stick */
+        } else {
+            s_vr_pose.id = 0;
+        }
         ty = lx * SC_LOOK_YAW;
         tp = ly * SC_LOOK_PITCH + s_pitch_bias;
         s_yaw += (ty - s_yaw) * 0.15f;                       /* eases, a frame at a time */
@@ -708,6 +732,53 @@ void bo3_seatcam_apply(void)
             float f3 = cp2 * F2[i] + sp2 * U[i];             /* pitch about the (yawed) right axis */
             U2[i] = cp2 * U[i] - sp2 * F2[i];
             F2[i] = f3;
+        }
+        if (s_vr_pose.id) {
+            /* The head: its axes in the headset's space (+x right, +y up, +z back), turned by the recentre yaw, then
+             * written along the car's right (= -left), up and back (= -forward). */
+            const float *q = s_vr_pose.q;
+            float x = q[0], y = q[1], z = q[2], w = q[3];
+            float ax[3][3] = {
+                { 1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y) },      /* right */
+                { 2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x) },      /* up */
+                { 2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y) } };    /* back */
+            float h, ch, sh, o[3][3];
+            int a;
+
+            if (!s_vr_ref_set || (GetAsyncKeyState('C') & 0x8000)) {
+                h = atan2f(-ax[2][0], -ax[2][2]);            /* the heading of the head's forward (= -back) */
+                s_vr_ref[0] = h;
+                s_vr_ref[1] = s_vr_pose.p[0];
+                s_vr_ref[2] = s_vr_pose.p[1];
+                s_vr_ref[3] = s_vr_pose.p[2];
+                s_vr_ref_set = 1;
+            }
+            ch = cosf(s_vr_ref[0]);
+            sh = sinf(s_vr_ref[0]);
+            for (a = 0; a < 3; a++) {
+                float vx = ax[a][0], vy = ax[a][1], vz = ax[a][2];
+
+                ax[a][0] = vx * ch + vz * sh;
+                ax[a][1] = vy;
+                ax[a][2] = -vx * sh + vz * ch;
+            }
+            for (a = 0; a < 3; a++)
+                for (i = 0; i < 3; i++)
+                    o[a][i] = ax[a][0] * -L[i] + ax[a][1] * U[i] + ax[a][2] * -F[i];
+            for (i = 0; i < 3; i++) {
+                L2[i] = -o[0][i];
+                U2[i] = o[1][i];
+                F2[i] = -o[2][i];
+            }
+            {
+                float dx = s_vr_pose.p[0] - s_vr_ref[1], dy = s_vr_pose.p[1] - s_vr_ref[2], dz = s_vr_pose.p[2] - s_vr_ref[3];
+                float rx = dx * ch + dz * sh, rz = -dx * sh + dz * ch;
+
+                for (i = 0; i < 3; i++)
+                    s_vr_off[i] = rx * -L[i] + dy * U[i] + rz * -F[i];
+            }
+        } else {
+            s_vr_off[0] = s_vr_off[1] = s_vr_off[2] = 0.0f;
         }
         /* The camera object is not a matrix (its first log dump: row 0 zero, row 1 starting 90.0, row 2 a unit
          * quaternion, row 3 the position): + 0x20 holds the orientation as a quaternion (x, y, z, w) and + 0x30
@@ -760,7 +831,7 @@ void bo3_seatcam_apply(void)
     }
     for (i = 0; i < 3; i++) {
         /* position: right (= -row 0) * x + up * y + forward * z, from the car's origin */
-        n[12 + i] = car[12 + i] - sv[0] * car[i] + sv[1] * car[4 + i] + sv[2] * car[8 + i];
+        n[12 + i] = car[12 + i] - sv[0] * car[i] + sv[1] * car[4 + i] + sv[2] * car[8 + i] + s_vr_off[i];
     }
     memcpy(s_cam.orig, c, sizeof s_cam.orig);
     memcpy(s_cam.wrote, n, sizeof s_cam.wrote);
@@ -768,5 +839,25 @@ void bo3_seatcam_apply(void)
     s_cam.va = cp;
     s_cam.applied = 1;
     near_apply();
+    if (s_vr_pose.id) {
+        uint32_t rc = SC_M32(SC_VIEW + 0x58u);
+
+        if (rc > 0x10000u && rc < 0x08000000u) {             /* the headset's window, for its field of view */
+            static int told;
+            float *vwp = SC_PTR(rc) + 0x68 / 4;
+
+            memcpy(s_vw_keep, vwp, sizeof s_vw_keep);
+            s_vw_at = vwp;
+            vwp[0] = s_vr_pose.vwx;
+            vwp[1] = s_vr_pose.vwy;
+            vwp[2] = 1.0f / s_vr_pose.vwx;
+            vwp[3] = 1.0f / s_vr_pose.vwy;
+            if (!told) {
+                told = 1;
+                slog("[SEATCAM] view window: the title %.4f x %.4f (reciprocals %.4f %.4f) -> the headset's %.4f x %.4f\n",
+                     s_vw_keep[0], s_vw_keep[1], s_vw_keep[2], s_vw_keep[3], s_vr_pose.vwx, s_vr_pose.vwy);
+            }
+        }
+    }
     stereo_begin(SC_M32(SC_VIEW + 0x58u));
 }
