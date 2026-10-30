@@ -125,6 +125,8 @@ if(NOT ANDROID)
     add_subdirectory(tests/modmanifest)
     # The MODS page in the title's Settings menu (src/game/modsmenu.c).
     add_subdirectory(tests/modsmenu)
+    # The shared car snapshot maths (src/game/carstate_math.h).
+    add_subdirectory(tests/carstate)
 endif()
 
 # Line-level symbols for the runtime libraries, so a hang sample inside one

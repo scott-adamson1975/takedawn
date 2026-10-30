@@ -196,9 +196,10 @@ static void ctl_pad(void)
     driving = ctl_driving_for(usb >= 1 ? 1u : 0u);
     scripted = usb >= 0 && (xbox_InputScriptedPads() & (1u << usb));
     nintendo = xbox_InputFaceLayoutNintendo();
-    /* The keys and the on-screen controls are the Xbox layout always. */
+    /* The keys, the on-screen controls and a racing wheel are the Xbox
+     * layout always: the wheel's pedals are the triggers. */
     ps2 = scheme == 1 && driving
-       && !(src & (XBOX_INPUT_SRC_KEYS | XBOX_INPUT_SRC_TOUCH))
+       && !(src & (XBOX_INPUT_SRC_KEYS | XBOX_INPUT_SRC_TOUCH | XBOX_INPUT_SRC_WHEEL))
        && (s_scripted_too || !scripted);
     /* A script standing in for a controller (BO3_CTL_SCRIPTED) has to be one
      * all the way: the face layout is applied as a host pad is read, which a
