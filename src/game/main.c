@@ -2244,7 +2244,8 @@ int  nv2a_host_hdr(void);                               /* toolkit nv2a_backend_
 static void hdr_mark(uint32_t tag)
 {
     uint32_t dev, put;
-    /* graphics.hdr (live) or RECOMP_DEBUG=hdr: before, only the debug
+
+    bo3_seatcam_stereo_scene((int)tag);     /* --stereo: the scene's eye shift on, the HUD's off (seatcam.c) */    /* graphics.hdr (live) or RECOMP_DEBUG=hdr: before, only the debug
      * switch marked, so the setting alone never gave the scene its light. */
     if (!nv2a_host_hdr())
         return;
@@ -3175,6 +3176,7 @@ int main(int argc, char **argv)
      * arguments stay in its ANSI code page, as before. After the console is
      * attached: its code page is set with it. */
     s_utf8_args = recomp_win_utf8_args(&argc, &argv);
+    bo3_seatcam_args(argc, argv);                 /* --seatcam, --bonnet (seatcam.c) */
 #endif
 #if defined(BO3_HAVE_RESTART)
     /* BO-124: the arguments, directory and environment as given, for the

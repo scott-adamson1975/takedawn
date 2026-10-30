@@ -76,6 +76,7 @@ static struct {
 } s_cam;
 
 static float s_yaw, s_pitch;            /* the look now, radians: right and up positive */
+static float s_ipd;                     /* the eye separation, metres; 0 = no stereo (BO3_SEATCAM_STEREO, --stereo[=ipd]) */
 
 /* The per-car seat (below): declared here for the start-up code. */
 static float s_cur[2][3];               /* slot 0 the seat, slot 1 over the bonnet: right, up, ahead */
@@ -125,6 +126,87 @@ static void near_apply(void)
     s_near_applied = 1;
 }
 
+/* ---- stereo: side by side, each eye drawn by the renderer ---------------------------
+ *
+ * --stereo[=ipd] (BO3_SEATCAM_STEREO): the seat camera stays ONE camera, between the eyes; the toolkit's Vulkan backend
+ * draws each scene draw twice, the left eye in the left half of the picture and the right in the right half, each
+ * squeezed to half width, with a small sideways shift of the clip position (nv2a_pb_state.h's stereo channel). What
+ * the guest does is tell it, in order with the draws, when to start (here, at the stage's render), where the shift is
+ * zero (the HUD: main.c's hdr_ui mark calls bo3_seatcam_stereo_scene) and when to stop (the flip).
+ *
+ * The shift is K = P00 * ipd / 2, where P00 is how much one metre sideways in front of the camera moves the clip x:
+ * 1 / (the view window's half width). The RwCamera (view + 0x58) has the view window at + 0x68 and its reciprocal at
+ * + 0x70 (checked against each other; 0.75, a 16:9 picture's, when they do not agree). Bloom and motion blur
+ * (render flags 12 and 14, 0x4D61C4 +) read the whole picture back and mix the eyes, so they are off while stereo is on. */
+void nv2a_pb_stream_mark_stereo(uint32_t va, uint32_t value);       /* toolkit nv2a_pb_state.h */
+#define SC_STEREO_ON 0x40000000u
+#define SC_RFLAGS    0x004D61C4u
+static int s_stereo_on;                 /* this picture is drawn as a pair */
+static uint32_t s_stereo_k;             /* K in millionths */
+static uint8_t s_rflag_keep[2];
+static int s_rflag_set;
+
+static void stereo_mark(uint32_t value)
+{
+    uint32_t dev = SC_M32(0x35FB48u), put;
+
+    if (!dev)
+        return;
+    put = SC_M32(dev);
+    if (put)
+        nv2a_pb_stream_mark_stereo(put, value);
+}
+
+static void stereo_begin(uint32_t rc)
+{
+    const float *f = SC_PTR(rc);
+    float vw = f[0x68 / 4], rcp = f[0x70 / 4], p00 = 0.75f, k;
+    static int logged;
+    uint8_t *fl = (uint8_t *)((uintptr_t)g_xbox_mem_offset + SC_RFLAGS);
+
+    if (!(s_ipd > 0.0f))
+        return;
+    if (vw > 0.2f && vw < 5.0f && fabsf(vw * rcp - 1.0f) < 0.02f)
+        p00 = 1.0f / vw;
+    k = p00 * s_ipd * 0.5f;
+    s_stereo_k = (uint32_t)(k * 1e6f) & 0x3FFFFFFFu;
+    if (!logged) {
+        logged = 1;
+        slog("[SEATCAM] stereo: view window %.4f (reciprocal %.4f) -> P00 %.4f, ipd %.3f m, clip shift K = %.5f\n", vw, rcp, p00,
+             s_ipd, k);
+    }
+    if (!s_rflag_set) {                  /* bloom and motion blur off for the picture */
+        s_rflag_keep[0] = fl[12];
+        s_rflag_keep[1] = fl[14];
+        fl[12] = fl[14] = 0;
+        s_rflag_set = 1;
+    }
+    s_stereo_on = 1;
+    stereo_mark(SC_STEREO_ON | s_stereo_k);
+}
+
+static void stereo_end(void)
+{
+    uint8_t *fl = (uint8_t *)((uintptr_t)g_xbox_mem_offset + SC_RFLAGS);
+
+    if (s_rflag_set) {
+        fl[12] = s_rflag_keep[0];
+        fl[14] = s_rflag_keep[1];
+        s_rflag_set = 0;
+    }
+    if (s_stereo_on) {
+        s_stereo_on = 0;
+        stereo_mark(0);
+    }
+}
+
+/* main.c's scene and UI marks (hdr_scene, hdr_ui): the shift for the scene, none for the HUD and menus. */
+void bo3_seatcam_stereo_scene(int scene)
+{
+    if (s_stereo_on)
+        stereo_mark(SC_STEREO_ON | (scene ? s_stereo_k : 0u));
+}
+
 static void near_restore(void)
 {
     if (!s_near_applied)
@@ -159,13 +241,74 @@ static void look_input(float *x, float *y)
 #endif
 }
 
+#define SC_MAXCARS 256
+#define SC_NSLOT   2
+static struct { uint32_t key; int slot; float v[3]; } s_tab[SC_MAXCARS];
+static int s_ntab;
+static uint32_t s_curkey;               /* the car the slots are for; 0 none yet */
+static int s_alt;                       /* 0 the seat, 1 the close chase, 2 the far chase (V), while the car is drawn */
+static const struct { const char *name; float v[3]; float pitch_deg; } k_alt[3] = {
+    { "the driver's seat", { 0, 0, 0 }, 0.0f },
+    { "close chase", { 0.0f, 1.7f, -4.3f }, -7.0f },
+    { "far chase", { 0.0f, 2.9f, -9.5f }, -10.0f },
+};
+static float s_bonnet[3] = { 0.0f, 1.1f, 0.35f };    /* the default over-the-bonnet point */
+static float s_pitch_bias;              /* the view's own tilt, radians (up positive) */
+
+/* The command line: --seatcam[=<right>,<up>,<ahead>[,save]] and --bonnet=<right>,<up>,<ahead>[,save] (main.c hands over
+ * argc and argv before anything runs). --seatcam turns the seat camera on, like BO3_SEATCAM; with three numbers it sets
+ * the default point of the driver's seat, --bonnet the default over the bonnet. A trailing ",save" keeps the point as the
+ * DEFAULT in the seat file (a line with the model key 0), so that later runs start from it without the parameter.
+ * A car with a point of its own in the file (the numpad's 0) uses that instead. */
+static int s_cli_on;
+static int s_cli_has[2], s_cli_save[2];
+static float s_cli_v[2][3];
+
+static void cli_point(const char *a, int slot)
+{
+    float x, y, z;
+    int n = sscanf(a, "%f,%f,%f", &x, &y, &z);
+
+    if (n == 3) {
+        s_cli_v[slot][0] = x;
+        s_cli_v[slot][1] = y;
+        s_cli_v[slot][2] = z;
+        s_cli_has[slot] = 1;
+        s_cli_save[slot] = strstr(a, ",save") != NULL;
+    }
+}
+
+void bo3_seatcam_args(int argc, char **argv)
+{
+    int i;
+
+    for (i = 1; i < argc; i++) {
+        if (!strncmp(argv[i], "--seatcam", 9) && (argv[i][9] == 0 || argv[i][9] == '=')) {
+            s_cli_on = 1;
+            if (argv[i][9] == '=')
+                cli_point(argv[i] + 10, 0);
+        } else if (!strncmp(argv[i], "--stereo", 8) && (argv[i][8] == 0 || argv[i][8] == '=')) {
+            s_cli_on = 1;
+            s_ipd = argv[i][8] == '=' ? (float)atof(argv[i] + 9) : 0.064f;
+        } else if (!strncmp(argv[i], "--bonnet=", 9)) {
+            s_cli_on = 1;
+            cli_point(argv[i] + 9, 1);
+        }
+    }
+}
+
+static void tab_put(uint32_t key, int slot, const float *v);
+static int tab_find(uint32_t key, int slot);
+
 void bo3_seatcam_start(void)
 {
     const char *e = getenv("BO3_SEATCAM");
 
     /* Off when unset, empty or exactly "0": a seat such as "0,0.66,0.15" starts with a 0 (no sideways offset). */
-    if (!e || !*e || !strcmp(e, "0"))
+    if ((!e || !*e || !strcmp(e, "0")) && !s_cli_on)
         return;
+    if (!e)
+        e = "";
     s_on = 1;
     {
         const char *l = getenv("BO3_SEATCAM_LOG");
@@ -184,6 +327,14 @@ void bo3_seatcam_start(void)
         }
     }
     {
+        const char *st = getenv("BO3_SEATCAM_STEREO");
+
+        if (st && *st && s_ipd == 0.0f)
+            s_ipd = (float)atof(st) > 0.0f ? (float)atof(st) : 0.064f;
+        if (s_ipd > 0.0f)
+            slog("[SEATCAM] stereo: the eyes %.3f m apart, side by side in one picture (the renderer draws each eye)\n", s_ipd);
+    }
+    {
         const char *nn = getenv("BO3_SEATCAM_NEAR");
 
         if (nn && *nn)
@@ -196,6 +347,23 @@ void bo3_seatcam_start(void)
             snprintf(s_file, sizeof s_file, "%s", sf);
     }
     tab_load();
+    {
+        /* The defaults: the saved ones (key 0 in the file), then the environment's seat (above), then the command line's. */
+        int t0 = tab_find(0, 0), t1 = tab_find(0, 1);
+
+        if (t0 >= 0 && !strchr(e, ','))
+            memcpy(s_seat, s_tab[t0].v, sizeof s_seat);
+        if (t1 >= 0)
+            memcpy(s_bonnet, s_tab[t1].v, sizeof s_bonnet);
+        if (s_cli_has[0])
+            memcpy(s_seat, s_cli_v[0], sizeof s_seat);
+        if (s_cli_has[1])
+            memcpy(s_bonnet, s_cli_v[1], sizeof s_bonnet);
+        if (s_cli_has[0] && s_cli_save[0])
+            tab_put(0, 0, s_seat);
+        if (s_cli_has[1] && s_cli_save[1])
+            tab_put(0, 1, s_bonnet);
+    }
     slog("[SEATCAM] near plane while seated: %.3f m (0 = the title's)\n", s_near);
     fprintf(stderr, "[SEATCAM] on: the race is drawn from the car, right %.2f up %.2f ahead %.2f m (BO3_SEATCAM)\n",
             s_seat[0], s_seat[1], s_seat[2]);
@@ -219,6 +387,7 @@ void bo3_seatcam_restore(void)
         }
     }
     near_restore();
+    stereo_end();
     if (!s_cam.applied)
         return;
     s_cam.applied = 0;
@@ -241,20 +410,6 @@ void bo3_seatcam_restore(void)
  * .bgv (car + 0x50, its + 8: unique to a model, the same every run). The table is a text file, one slot of one
  * car a line: "0x<key> <slot> <right> <up> <ahead>" (a line of four numbers is slot 0),
  * BO3_SEATCAM_FILE=<path> (default seatcam.txt in the game's folder). The chase views are fixed. */
-#define SC_MAXCARS 256
-#define SC_NSLOT   2
-static struct { uint32_t key; int slot; float v[3]; } s_tab[SC_MAXCARS];
-static int s_ntab;
-static uint32_t s_curkey;               /* the car the slots are for; 0 none yet */
-static int s_alt;                       /* 0 the seat, 1 the close chase, 2 the far chase (V), while the car is drawn */
-static const struct { const char *name; float v[3]; float pitch_deg; } k_alt[3] = {
-    { "the driver's seat", { 0, 0, 0 }, 0.0f },
-    { "close chase", { 0.0f, 1.7f, -4.3f }, -7.0f },
-    { "far chase", { 0.0f, 2.9f, -9.5f }, -10.0f },
-};
-static float s_bonnet[3] = { 0.0f, 1.1f, 0.35f };    /* the default over-the-bonnet point */
-static float s_pitch_bias;              /* the view's own tilt, radians (up positive) */
-
 static void tab_load(void)
 {
     FILE *f = fopen(s_file, "r");
@@ -297,7 +452,7 @@ static int tab_find(uint32_t key, int slot)
     return -1;
 }
 
-static void tab_save(uint32_t key, int slot)
+static void tab_put(uint32_t key, int slot, const float *v)
 {
     FILE *f;
     int i = tab_find(key, slot);
@@ -309,7 +464,7 @@ static void tab_save(uint32_t key, int slot)
     }
     s_tab[i].key = key;
     s_tab[i].slot = slot;
-    memcpy(s_tab[i].v, s_cur[slot], sizeof s_cur[slot]);
+    memcpy(s_tab[i].v, v, sizeof s_tab[i].v);
     f = fopen(s_file, "w");
     if (!f) {
         slog("[SEATCAM] cannot write %s\n", s_file);
@@ -319,8 +474,13 @@ static void tab_save(uint32_t key, int slot)
         fprintf(f, "0x%08X %d %.3f %.3f %.3f\n", s_tab[i].key, s_tab[i].slot, s_tab[i].v[0], s_tab[i].v[1],
                 s_tab[i].v[2]);
     fclose(f);
-    slog("[SEATCAM] %s for car 0x%08X saved to %s: right %.3f up %.3f ahead %.3f\n",
-         slot ? "the over-bonnet point" : "the seat", key, s_file, s_cur[slot][0], s_cur[slot][1], s_cur[slot][2]);
+    slog("[SEATCAM] %s for %s saved to %s: right %.3f up %.3f ahead %.3f\n",
+         slot ? "the over-bonnet point" : "the seat", key ? "this car" : "every car without its own", s_file, v[0], v[1], v[2]);
+}
+
+static void tab_save(uint32_t key, int slot)
+{
+    tab_put(key, slot, s_cur[slot]);
 }
 
 /* The key of the player's car: its model's size field, or 0. */
@@ -585,4 +745,5 @@ void bo3_seatcam_apply(void)
     s_cam.va = cp;
     s_cam.applied = 1;
     near_apply();
+    stereo_begin(SC_M32(SC_VIEW + 0x58u));
 }

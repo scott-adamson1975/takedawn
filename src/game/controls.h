@@ -187,9 +187,12 @@ void bo3_autopilot_start(uint32_t (*flips)(void));
 void bo3_softbody_start(uint32_t (*flips)(void));
 
 /* BO3_SEATCAM=<right>,<up>,<ahead>: the race drawn from a seat in the car (seatcam.c; a VR test). apply: at the stage render mark; restore: at the flip. */
+/* argc/argv from main: --seatcam[=r,u,a[,save]] and --bonnet=r,u,a[,save] (before bo3_seatcam_start). */
+void bo3_seatcam_args(int argc, char **argv);
 void bo3_seatcam_start(void);
 void bo3_seatcam_apply(void);
 void bo3_seatcam_restore(void);
+void bo3_seatcam_stereo_scene(int scene);   /* main.c's scene / UI marks: the stereo shift on for the scene, 0 for the HUD (--stereo[=ipd], BO3_SEATCAM_STEREO) */
 /* interface.menu_entry: TAKEDAWN SETTINGS in the title's Settings menu (menuentry.c, BO-133). */
 void bo3_menu_entry_start(void);
 
