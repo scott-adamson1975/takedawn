@@ -260,3 +260,23 @@ a stand-in for the headset's head tracking.
 
 **Where this leaves the plan:** the in-car view is feasible without visibility work for the directions tried; a
 visible car (bonnet, nose) is the open point and is a design choice as much as a bug: real cockpits have a body.
+
+## The seat per car, the roof, and the car turning off (2026-10-30, after the owner's screenshots)
+
+**The screenshots** (seat 1.0 m up and 0.3 m behind the origin): the HUD and the world are right, the bonnet and the
+windscreen frame are drawn, and the interior is dark with a faint steering-wheel ring just left of centre (so the
+car models have a steering wheel, and this car's is on the left). **The roof is cut away**, and the change-view
+button turns the car's body off and on.
+
+- **The roof**: the title's near clip plane is 0.5 m (draw-distance.md); with the seat inside the cabin the roof and
+  the pillars are nearer than that and are clipped. `BO3_SEATCAM_NEAR=<m>` (default 0.1) lowers it while seated: the
+  RwCamera (`view + 0x58`) is searched once for the pair 0.5, 10000.0 (the near and far planes, side by side) and the
+  offset logged. Untested: whether the host's depth handling copes with 0.1 (distant depth flicker would show).
+- **The seat differs per car**, in all three axes: a small coupe against a big saloon, and the wheel on the left in
+  a US car and the right in a UK one. It is kept per car model, found by the size field of the car's model (`car +
+  0x50` is the .bgv, its `+ 8` is unique to a model), in a text file (`BO3_SEATCAM_FILE`, one line a car: key,
+  right, up, ahead) and set in the game with the numpad (4/6, 8/2, 9/3, 5 resets, 0 saves). A car with no line has the
+  default seat. The model also holds the wheel hubs (`+ 0xBB0 + 0x40 * w`, used by soft-body damage), so a default
+  seat could later be derived from the wheelbase and track.
+- **The car turning off**: not the draw byte (`car + 0x18F8`) nor the vehicles flag at the render's start (both 1 in
+  both views); the log now also reads them at the flip, to see whether the title changes them during the render.
