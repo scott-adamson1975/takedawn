@@ -48,6 +48,7 @@ typedef struct xbox_vr_pose {           /* the same layout as oxr.h's */
 } xbox_vr_pose;
 int xbox_VrPose(xbox_vr_pose *out);
 void xbox_VrRecentre(void);
+void xbox_VrFrame(unsigned id, float vwx, float vwy);
 
 #define SC_PTR(va)  ((float *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define SC_M32(va)  (*(const uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
@@ -869,7 +870,7 @@ void bo3_seatcam_apply(void)
     s_cam.va = cp;
     s_cam.applied = 1;
     near_apply();
-    if (s_vr_pose.id && !(getenv("BO3_VR_FOV") && *getenv("BO3_VR_FOV") == '0')) {   /* the headset's window (BO3_VR_FOV=0: the title's) */
+    if (s_vr_pose.id && getenv("BO3_VR_FOV") && *getenv("BO3_VR_FOV") == '1') {   /* the headset's window: an experiment, the title's projection did not follow it (the picture came out tall) */
         uint32_t rc = SC_M32(SC_VIEW + 0x58u);
 
         if (rc > 0x10000u && rc < 0x08000000u) {             /* the headset's window, for its field of view */
@@ -890,4 +891,14 @@ void bo3_seatcam_apply(void)
         }
     }
     stereo_begin(SC_M32(SC_VIEW + 0x58u));
+    if (s_vr_pose.id) {
+        /* The layer claims the frustum the picture was really drawn with: the camera's view window now. */
+        uint32_t rc = SC_M32(SC_VIEW + 0x58u);
+
+        if (rc > 0x10000u && rc < 0x08000000u) {
+            const float *w = SC_PTR(rc) + 0x68 / 4;
+
+            xbox_VrFrame(s_vr_pose.id, w[0], w[1]);
+        }
+    }
 }
