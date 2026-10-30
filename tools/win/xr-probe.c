@@ -157,7 +157,9 @@ static int stage23(void)
            sp.graphicsProperties.maxSwapchainImageWidth, sp.graphicsProperties.maxSwapchainImageHeight,
            sp.graphicsProperties.maxLayerCount, sp.trackingProperties.orientationTracking ? "yes" : "no",
            sp.trackingProperties.positionTracking ? "yes" : "no");
-    r = enum_views(inst, sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 2, &nv, NULL);
+    r = enum_views(inst, sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &nv, NULL);
+    if (XR_FAILED(r) || nv != 2)
+        printf("  view count: %s, %u\n", res(r), nv);
     memset(views, 0, sizeof views);
     views[0].type = views[1].type = XR_TYPE_VIEW_CONFIGURATION_VIEW;
     r = enum_views(inst, sys, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 2, &nv, views);
