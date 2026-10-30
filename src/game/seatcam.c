@@ -35,6 +35,8 @@
 #include <windows.h>
 #endif
 
+#include <stdarg.h>
+
 #include "controls.h"
 
 extern ptrdiff_t g_xbox_mem_offset;
@@ -50,6 +52,20 @@ extern ptrdiff_t g_xbox_mem_offset;
 #define SC_LOOK_PITCH (60.0f * 3.14159265f / 180.0f)
 
 static int s_on, s_log;
+static FILE *s_lf;                      /* BO3_SEATCAM_LOG=<file>: the diagnostics go here (the game's own stderr is not in the log file) */
+
+static void slog(const char *fmt, ...)
+{
+    va_list a;
+
+    if (!s_log)
+        return;
+    va_start(a, fmt);
+    vfprintf(s_lf ? s_lf : stderr, fmt, a);
+    va_end(a);
+    if (s_lf)
+        fflush(s_lf);
+}
 static float s_seat[3] = { 0.0f, 0.66f, 0.15f };      /* right, up, ahead */
 static struct {
     int applied;
@@ -91,7 +107,13 @@ void bo3_seatcam_start(void)
     if (!e || !*e || *e == '0')
         return;
     s_on = 1;
-    s_log = getenv("BO3_SEATCAM_LOG") != NULL;
+    {
+        const char *l = getenv("BO3_SEATCAM_LOG");
+
+        s_log = l != NULL && *l;
+        if (s_log && strlen(l) > 1)
+            s_lf = fopen(l, "w");
+    }
     if (strchr(e, ',')) {
         float a, b, c;
 
@@ -103,6 +125,7 @@ void bo3_seatcam_start(void)
     }
     fprintf(stderr, "[SEATCAM] on: the race is drawn from the car, right %.2f up %.2f ahead %.2f m (BO3_SEATCAM)\n",
             s_seat[0], s_seat[1], s_seat[2]);
+    slog("[SEATCAM] on: right %.2f up %.2f ahead %.2f m\n", s_seat[0], s_seat[1], s_seat[2]);
 }
 
 void bo3_seatcam_restore(void)
@@ -116,8 +139,10 @@ void bo3_seatcam_restore(void)
 
 void bo3_seatcam_apply(void)
 {
-    static int shown;
+    static int shown, why_last = -1;
+    static unsigned applied_n, calls_n;
     uint32_t cp;
+    int why = 0;
     float *c, *car, d[3], dist, n[16];
     int i;
 
@@ -125,25 +150,50 @@ void bo3_seatcam_apply(void)
         return;
     bo3_seatcam_restore();                                  /* a flip we missed */
     car = SC_PTR(SC_CAR1 + 0x10u);
-    if (SC_M32(SC_CAR1 + 0x134Cu) != 2 || SC_M32(SC_CAR1 + 0x3D0u) != 4)
-        return;
+    calls_n++;
     cp = SC_M32(SC_VIEW + 0x68u);
-    if (cp < 0x10000u || cp >= 0x08000000u)
+    if (SC_M32(SC_CAR1 + 0x134Cu) != 2)
+        why = 1;
+    else if (SC_M32(SC_CAR1 + 0x3D0u) != 4)
+        why = 2;
+    else if (cp < 0x10000u || cp >= 0x08000000u)
+        why = 3;
+    if (why) {
+        if (why != why_last) {
+            why_last = why;
+            slog("[SEATCAM] stage render #%u: not applied: %s\n", calls_n,
+                 why == 1 ? "the race is not in play (phase)" : why == 2 ? "the car is not driving (+0x3D0)"
+                                                                         : "no camera object at the view");
+        }
         return;
+    }
     c = SC_PTR(cp);
     for (i = 0; i < 3; i++)
         d[i] = c[12 + i] - car[12 + i];
     dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
     if (s_log && shown < 6 && (dist < SC_MAX_D)) {
         shown++;
-        fprintf(stderr, "[SEATCAM] camera object %08x, dist %.2f:\n", cp, dist);
+        slog("[SEATCAM] camera object %08x, dist %.2f:\n", cp, dist);
         for (i = 0; i < 4; i++)
-            fprintf(stderr, "  cam row %d  %8.4f %8.4f %8.4f %8.4f   car row %d  %8.4f %8.4f %8.4f %8.4f\n", i,
+            slog("  cam row %d  %8.4f %8.4f %8.4f %8.4f   car row %d  %8.4f %8.4f %8.4f %8.4f\n", i,
                     c[4 * i], c[4 * i + 1], c[4 * i + 2], c[4 * i + 3], i, car[4 * i], car[4 * i + 1],
                     car[4 * i + 2], car[4 * i + 3]);
     }
-    if (dist >= SC_MAX_D)
+    if (dist >= SC_MAX_D) {
+        if (why_last != 4) {
+            why_last = 4;
+            slog("[SEATCAM] stage render #%u: not applied: the title's camera is %.1f m from the car (a crash camera or a replay)\n",
+                 calls_n, dist);
+        }
         return;
+    }
+    if (why_last != 0) {
+        why_last = 0;
+        slog("[SEATCAM] stage render #%u: applied (the title's camera was %.2f m from the car)\n", calls_n, dist);
+    }
+    applied_n++;
+    if (applied_n % 600 == 0)
+        slog("[SEATCAM] %u renders drawn from the seat so far\n", applied_n);
     memcpy(n, c, sizeof n);
     {
         /* The look: turn the car's axes about the seat. Written in the axes themselves (left, up, forward) so
