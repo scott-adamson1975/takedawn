@@ -136,11 +136,20 @@ Vulkan instance and device creation the plan relies on exists), `XR_KHR_composit
 `XR_EXT_hand_tracking` and `XR_EXT_debug_utils`. It does **not** offer `XR_KHR_composition_layer_cylinder`
 or `_equirect2`: a curved screen is not available, so theatre mode is a flat quad layer.
 
-**Stages 2 and 3 are not run yet** (`xr-probe --system`): they start SteamVR and want the headset
-connected. They create an OpenXR instance, read the headset's system, the recommended eye size and the
-Vulkan versions it wants, then make a Vulkan 1.3 instance and device through the runtime
-(`xrCreateVulkanInstanceKHR`, `xrGetVulkanGraphicsDevice2KHR`, `xrCreateVulkanDeviceKHR`) and say which GPU it
-picks. That answers the first open question.
+**Stages 2 and 3, run with the Quest 3 over Link and SteamVR up: all pass.**
+
+- Runtime "SteamVR/OpenXR" 2.18.4; the system is "SteamVR/OpenXR : oculus", orientation and position
+  tracking, 16 layers, a swapchain up to 8192x8192.
+- **Recommended eye size 2528x2704** (two views, one sample). That is about 3.4 times the pixels of the
+  game's biggest render scale target per eye (640x480 at 4x is 2560x1920), so the picture will be soft
+  unless the game renders larger than the 4x cap; see "The hard parts", 2.
+- The runtime states Vulkan 1.0 to 1.2 as its supported range, yet **a Vulkan 1.3 instance made through
+  `xrCreateVulkanInstanceKHR` succeeded**, and the GPU it names is the RTX 4090 (Vulkan 1.4.357), the card
+  the game already uses. `xrCreateVulkanDeviceKHR` made a device with a graphics queue (family 0).
+  So the first open question is answered: **the runtime-assisted creation works with the Vulkan version the
+  toolkit asks for.** What is untested is the toolkit's own long extension and feature lists on top of the
+  runtime's additions (present-wait, HDR metadata, dynamic rendering features): the two creation calls
+  would need to add those to the create-info before handing it over.
 
 **Environment found:** SteamVR is the active runtime (registry `ActiveRuntime`) and ships an OpenXR loader
 (`SteamVR/bin/win64/openxr_loader.dll`, 1.1.62). The OpenXR headers are the Khronos SDK's
@@ -165,7 +174,7 @@ does the Vulkan headers, and the loader stays a run-time `LoadLibrary` (the syst
 
 ## Next steps (in order)
 
-1. Run `xr-probe --system` with SteamVR up and the headset connected (needs the owner).
+1. ~~Run `xr-probe --system`~~ Done 2026-10-30, passes (above).
 2. Record the view object while cycling the camera (extend the telemetry recorder) to learn the views.
 3. Phase 1, theatre mode, behind a setting, off by default: OpenXR instance and session created with the
    toolkit's Vulkan device, a quad layer fed by a second blit, `xrWaitFrame` pacing kept separate from the
