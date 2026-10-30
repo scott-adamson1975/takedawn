@@ -773,7 +773,7 @@ void bo3_seatcam_apply(void)
             int a;
 
             if (!s_vr_ref_set) {
-                h = atan2f(-ax[2][0], -ax[2][2]);            /* the heading of the head's forward (= -back) */
+                h = atan2f(-ax[2][0], ax[2][2]);             /* the heading of the head's forward (= -back): atan2(f.x, -f.z) */
                 s_vr_ref[0] = h;
                 s_vr_ref[1] = s_vr_pose.p[0];
                 s_vr_ref[2] = s_vr_pose.p[1];
