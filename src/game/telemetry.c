@@ -56,8 +56,11 @@ extern ptrdiff_t g_xbox_mem_offset;
 #define TEL_PHASE    0x134Cu        /* car + : 1 before the GO, 2 in play, 3 finished */
 #define TEL_DUMP     0x2900u        /* bytes of the car object kept a frame (it reaches 0x27D8+) */
 #define TEL_PADS     0x004AE20Cu    /* the pad manager's four records (as main.c's drive_log) */
+#define TEL_VIEW     0x004D6200u    /* the race's render view: the view matrix, + 0x68 its camera point (hirefresh.c) */
+#define TEL_PLAYER_VIEW 0x007397C8u /* player 1's view object (docs/draw-distance.md) */
+#define TEL_VIEW_SIZE   0x1CCu      /* ... and its size */
 
-static FILE *s_csv, *s_bin, *s_imp;
+static FILE *s_csv, *s_bin, *s_imp, *s_view;
 static int s_frames, s_warned;
 static uint32_t (*s_flips)(void);
 
@@ -90,7 +93,19 @@ void bo3_telemetry_start(uint32_t (*flips)(void))
                 w, w, w, w, w, w, w, w, w, w, w, w);
     fprintf(s_csv, ",pad_buttons,pad_lt,pad_rt,pad_lx,pad_ly,pad_a,pad_b,pad_x,pad_y");
     /* carstate.c's derived values for the same sample (carstate_math.h) */
-    fprintf(s_csv, ",cs_ok,cs_speed,cs_yaw,cs_pitch,cs_roll,cs_surge,cs_sway,cs_vup,cs_aup,cs_slip,cs_impacts\n");
+    fprintf(s_csv, ",cs_ok,cs_speed,cs_yaw,cs_pitch,cs_roll,cs_surge,cs_sway,cs_vup,cs_aup,cs_slip,cs_impacts");
+    /* the camera the race is drawn with: its point's position and the view matrix (VR, tools/telemetry/find_views.py) */
+    fprintf(s_csv, ",cam_ptr,cam_px,cam_py,cam_pz");
+    for (int i = 0; i < 16; i++)
+        fprintf(s_csv, ",vm%d", i);
+    fprintf(s_csv, "\n");
+    snprintf(path, sizeof path, "%s-view.bin", p);
+    s_view = fopen(path, "wb");
+    if (s_view) {
+        const uint32_t vh[3] = { 0x56334F42u /* "BO3V" */, 1u, TEL_VIEW_SIZE };
+
+        fwrite(vh, sizeof vh, 1, s_view);
+    }
     bo3_carstate_request();                 /* the sampler and the impact mark are on */
     snprintf(path, sizeof path, "%s-impacts.csv", p);
     s_imp = fopen(path, "w");
@@ -160,9 +175,27 @@ void bo3_telemetry_sample(uint32_t hud_car)
         bo3_carstate cs;
 
         bo3_carstate_get(&cs, 0);           /* main.c's drive_log sampled it just before */
-        fprintf(s_csv, ",%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u\n", cs.accel_ok, cs.speed,
+        fprintf(s_csv, ",%d,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%u", cs.accel_ok, cs.speed,
                 cs.yaw_rate, cs.pitch_rate, cs.roll_rate, cs.surge, cs.sway, cs.vel_up, cs.accel_up,
                 cs.slip, cs.impact_count);
+    }
+    {
+        /* The race's render view (0x4D6200: the view matrix at +0, its camera point at +0x68, whose position is
+         * at +0x30), as hirefresh.c reads it. 0 when there is no camera point (outside the stage). */
+        uint32_t cp = M32(TEL_VIEW + 0x68u);
+        int ok = cp >= 0x10000u && cp < 0x08000000u;
+
+        fprintf(s_csv, ",%u,%.4f,%.4f,%.4f", ok ? cp : 0u, ok ? MF(cp + 0x30u) : 0.0f, ok ? MF(cp + 0x34u) : 0.0f,
+                ok ? MF(cp + 0x38u) : 0.0f);
+        for (int i = 0; i < 16; i++)
+            fprintf(s_csv, ",%.5f", MF(TEL_VIEW + 4u * (uint32_t)i));
+        fprintf(s_csv, "\n");
+    }
+    if (s_view) {
+        const uint32_t vhead = s_flips ? s_flips() : 0;
+
+        fwrite(&vhead, sizeof vhead, 1, s_view);
+        fwrite((const void *)((uintptr_t)g_xbox_mem_offset + TEL_PLAYER_VIEW), TEL_VIEW_SIZE, 1, s_view);
     }
     if (s_bin) {
         const uint32_t head[2] = { s_flips ? s_flips() : 0, car };
@@ -174,5 +207,7 @@ void bo3_telemetry_sample(uint32_t hud_car)
         fflush(s_csv);
         if (s_bin)
             fflush(s_bin);
+        if (s_view)
+            fflush(s_view);
     }
 }
