@@ -197,9 +197,12 @@ void bo3_telemetry_sample(uint32_t car);
 void bo3_wheel_feed_start(void);
 
 /* BO3_SEATCAM=<right>,<up>,<ahead>: the race drawn from a seat in the car (seatcam.c; a VR test). apply: at the stage render mark; restore: at the flip. */
+/* argc/argv from main: --seatcam[=r,u,a[,save]] and --bonnet=r,u,a[,save] (before bo3_seatcam_start). */
+void bo3_seatcam_args(int argc, char **argv);
 void bo3_seatcam_start(void);
 void bo3_seatcam_apply(void);
 void bo3_seatcam_restore(void);
+void bo3_seatcam_stereo_scene(int scene);   /* main.c's scene / UI marks: the stereo shift on for the scene, 0 for the HUD (--stereo[=ipd], BO3_SEATCAM_STEREO) */
 void bo3_telemetry_impact(float strength, const float dir[3]);  /* carstate.c's collision mark */
 
 /* interface.menu_entry: TAKEDAWN SETTINGS in the title's Settings menu (menuentry.c, BO-133). */
