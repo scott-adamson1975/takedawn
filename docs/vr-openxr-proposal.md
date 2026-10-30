@@ -217,3 +217,31 @@ near only 2 of 8 presses. The mode is not needed for VR: the camera is placed fr
 2. Before phase 2: draw the stage twice from a test camera (no headset) to check the render is safe to
    re-enter and the car looks right from the seat point (answers "is the stage render safe to call twice").
 3. Resolution: the recommended 2528x2704 per eye is far above the game's 4x cap (2560x1920 total, 640x480 base).
+
+## The seat camera test (2026-10-30): the camera can be replaced
+
+`BO3_SEATCAM=<right>,<up>,<ahead>` (`src/game/seatcam.c`, launcher `bin/run-seatcam.cmd`, off by default) draws the
+race from a seat in the player's car. **It works**: the stage's render begins by building the camera from the
+game's camera object, and the `uw_stage_render` mark is that function's entry, so writing the seat there (and
+restoring the title's values at the next flip) changes what the world is drawn from, with the HUD untouched.
+
+**The camera object** (the race's view is at `0x4D6200`, the object is at its `+ 0x68`; `0x4CFD70` in the test):
+
+| Offset | Holds |
+|---|---|
+| `+0x10` | the field of view in degrees (90.0) first, then zeros |
+| `+0x20` | the orientation as a **quaternion** (x, y, z, w): the standard quaternion of the rotation whose columns are the camera's x, y, z axes in the world, which for a car are its left, up and forward (the car's matrix rows are left, up, forward; left x up = forward, a proper rotation) |
+| `+0x30` | the position (x, y, z), then a fourth float (about 6.8 in the chase view) |
+
+Writing matrix rows there (the first attempt) blanks the world: the picture was the HUD over a dark fill.
+
+**Seen in one 130 s race through the log:** the override applied for over 3000 renders; it correctly stayed
+off while the car was not driving (+0x3D0 not 4: the crashes and the respawn) and for a camera more than 8 m from
+the car (a crash camera). The title's own camera was 5.3 m from the car (chase) or 1.3 m (front) when applied, and
+the same override gave the same seat in both views.
+
+Looking around (the right stick, or J, L, I and K in the test) turns the seat's orientation about the seat point:
+a stand-in for the headset's head tracking.
+
+**What the picture looked like** (the car's body in view, scenery missing sideways or behind, the HUD): to be
+filled in from the owner's observation of this test.
