@@ -41,6 +41,7 @@
 #include "controls.h"
 
 extern ptrdiff_t g_xbox_mem_offset;
+int xbox_VrInit(void);                  /* toolkit src/video/oxr.h */
 
 #define SC_PTR(va)  ((float *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define SC_M32(va)  (*(const uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
@@ -76,6 +77,7 @@ static struct {
 } s_cam;
 
 static float s_yaw, s_pitch;            /* the look now, radians: right and up positive */
+static int s_vr;                        /* --vr: a headset system was found (the toolkit's xbox_VrInit) */
 static float s_ipd;                     /* the eye separation, metres; 0 = no stereo (BO3_SEATCAM_STEREO, --stereo[=ipd]) */
 
 /* The per-car seat (below): declared here for the start-up code. */
@@ -142,7 +144,7 @@ void nv2a_pb_stream_mark_stereo(uint32_t va, uint32_t value);       /* toolkit n
 #define SC_STEREO_ON 0x40000000u
 #define SC_RFLAGS    0x004D61C4u
 static int s_stereo_on;                 /* this picture is drawn as a pair */
-static uint32_t s_stereo_k;             /* K in millionths */
+static uint32_t s_stereo_scene, s_stereo_ui;    /* the stereo values (nv2a_pb_state.h): the scene's shift, and none for the HUD */
 static uint8_t s_rflag_keep[2];
 static int s_rflag_set;
 
@@ -169,7 +171,20 @@ static void stereo_begin(uint32_t rc)
     if (vw > 0.2f && vw < 5.0f && fabsf(vw * rcp - 1.0f) < 0.02f)
         p00 = 1.0f / vw;
     k = p00 * s_ipd * 0.5f;
-    s_stereo_k = (uint32_t)(k * 1e6f) & 0x3FFFFFFFu;
+    {
+        /* nv2a_pb_state.h's nv2a_stereo_pack: K 12 bits (2e-5), the view window half width and height 9 bits (1/128) */
+        float vwy = f[0x68 / 4 + 1];
+        uint32_t a = (uint32_t)(k / 2e-5f + 0.5f), b = (uint32_t)(vw * 128.0f + 0.5f), c;
+
+        if (!(vwy > 0.2f && vwy < 5.0f))
+            vwy = 0.75f;
+        c = (uint32_t)(vwy * 128.0f + 0.5f);
+        if (a > 4095u) a = 4095u;
+        if (b > 511u) b = 511u;
+        if (c > 511u) c = 511u;
+        s_stereo_scene = SC_STEREO_ON | a << 18 | b << 9 | c;
+        s_stereo_ui = SC_STEREO_ON | b << 9 | c;
+    }
     if (!logged) {
         logged = 1;
         slog("[SEATCAM] stereo: view window %.4f (reciprocal %.4f) -> P00 %.4f, ipd %.3f m, clip shift K = %.5f\n", vw, rcp, p00,
@@ -182,7 +197,7 @@ static void stereo_begin(uint32_t rc)
         s_rflag_set = 1;
     }
     s_stereo_on = 1;
-    stereo_mark(SC_STEREO_ON | s_stereo_k);
+    stereo_mark(s_stereo_scene);
 }
 
 static void stereo_end(void)
@@ -204,7 +219,7 @@ static void stereo_end(void)
 void bo3_seatcam_stereo_scene(int scene)
 {
     if (s_stereo_on)
-        stereo_mark(SC_STEREO_ON | (scene ? s_stereo_k : 0u));
+        stereo_mark(scene ? s_stereo_scene : s_stereo_ui);
 }
 
 static void near_restore(void)
@@ -287,6 +302,14 @@ void bo3_seatcam_args(int argc, char **argv)
             s_cli_on = 1;
             if (argv[i][9] == '=')
                 cli_point(argv[i] + 10, 0);
+        } else if (!strcmp(argv[i], "--vr")) {
+            /* The headset (OpenXR, the toolkit's oxr.c): before anything makes the window or the Vulkan device. The
+             * eye separation is the default unless --stereo=<ipd> says; stereo is on with it. */
+            s_cli_on = 1;
+            if (s_ipd == 0.0f)
+                s_ipd = 0.064f;
+            if (xbox_VrInit())
+                s_vr = 1;
         } else if (!strncmp(argv[i], "--stereo", 8) && (argv[i][8] == 0 || argv[i][8] == '=')) {
             s_cli_on = 1;
             s_ipd = argv[i][8] == '=' ? (float)atof(argv[i] + 9) : 0.064f;

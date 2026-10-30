@@ -350,3 +350,35 @@ eye (the visor, about 0.08 m ahead of the helmet centre, a little below its cent
 
 Next for this: find each car's driver by looking at its vertices (plots), or detect it at run time from the model in
 memory with a looser search; the numpad stays as the fix for a car the search misses.
+
+## Stereo and the headset, milestone 1 (2026-10-30)
+
+**Stereo is done in the renderer, not the game.** The seat camera stays one camera between the eyes. The toolkit's
+Vulkan backend issues each scene draw twice into one picture: the left eye in the left half, the right eye in the
+right half, each squeezed to half width ("half side by side"). A guest-side value travels in the push buffer with the
+draws (the stereo channel, `nv2a_pb_state.h`: on/off, the eye shift K, and the camera's view window): the game marks
+it at the stage's render, drops the shift to 0 for the HUD (so it sits at screen depth) and marks it off at the flip.
+Both eyes are therefore from one game moment, and the game's stage render runs once. The generated vertex programs
+add a vertex push constant to the position's clip x (`D3D8_GLSL_EYE_PC`), +K for the left eye and -K for the right:
+after the divide by w that is K / w, the parallax of a camera moved sideways, so near things shift more. K = P00 *
+ipd / 2, with P00 = 1 / (the RwCamera's view window half width, `rc + 0x68`, checked against its reciprocal at `+ 0x70`).
+A pass-through batch (pre-transformed 2D) has no constant. Bloom and motion blur (render flags 12 and 14) are off
+while stereo is on: they read the whole picture back. NVIDIA's 3D Vision (discontinued 2019, D3D/OpenGL only) is not an
+option on this Vulkan path; Vulkan multiview would also work but needs layered render targets throughout.
+
+**The headset is OpenXR direct** (`src/video/oxr.c` in the toolkit, `--vr`): the loader is opened at run time; the
+Vulkan instance, physical device and device are made through `xrCreateVulkanInstanceKHR`,
+`xrGetVulkanGraphicsDevice2KHR` and `xrCreateVulkanDeviceKHR` (creation hooks in `nv2a_vk_core.h`); the session is made
+at the first stereo frame on the core's device and queue; each stereo frame the presenter shows is copied raw
+(`vkCmdCopyImage`, no gamma conversion) into a `B8G8R8A8_SRGB` swapchain image and submitted as one projection layer
+whose two views are the left and right halves, with the field of view taken from the camera's view window. The queue
+lock is held around the submit, release and end frame. HDR must be off (the slot is then 8-bit).
+
+**Milestone 1 limits:** the layer is in the VIEW space, so it is head-locked (the picture follows the head); the eyes'
+poses are plain half-IPD offsets; there is no head tracking of the game camera; the picture's field of view is the
+game's (about 106 x 74 degrees), smaller than the headset's, so there is black around it; the game and the headset
+run at their own rates (60 Hz game, the runtime's rate), paced by `xrWaitFrame` once a flip. **Milestone 2:** head
+tracking drives the seat camera (and the view window is set to the headset's field of view), with the layer's poses
+the ones the frame was drawn with.
+
+Built and compiled; **not yet run in a headset.**
