@@ -186,6 +186,10 @@ void bo3_autopilot_start(uint32_t (*flips)(void));
 /* graphics.softbody: soft-body vehicle damage, drawn only (softbody.c). */
 void bo3_softbody_start(uint32_t (*flips)(void));
 
+/* BO3_SEATCAM=<right>,<up>,<ahead>: the race drawn from a seat in the car (seatcam.c; a VR test). apply: at the stage render mark; restore: at the flip. */
+void bo3_seatcam_start(void);
+void bo3_seatcam_apply(void);
+void bo3_seatcam_restore(void);
 /* interface.menu_entry: TAKEDAWN SETTINGS in the title's Settings menu (menuentry.c, BO-133). */
 void bo3_menu_entry_start(void);
 

@@ -2226,6 +2226,8 @@ static void uw_stage_render(void)
 {
     s_uw_frame = s_uw_stage;
     s_stage_drew = 1;
+    /* BO3_SEATCAM (seatcam.c): the stage's render begins by building the camera; the seat goes in first. */
+    bo3_seatcam_apply();
     /* display.score_board (scoreboard.c, BO-165): before the HUD is drawn. */
     bo3_score_board_render();
 }
@@ -2316,6 +2318,8 @@ static void uw_flip(void)
 {
     uint32_t n = s_uw_flips + 1;
     float a = (float)s_uw_frame, prev = s_uw_ring[(n - 1) % UW_RING];
+
+    bo3_seatcam_restore();              /* the title's camera back (seatcam.c) */
 
     /* The first flip after a stage's last frame shows that frame again (the
      * title flips without drawing while it leaves the stage): wide still.
@@ -3645,6 +3649,7 @@ int main(int argc, char **argv)
     hud_dump_start();
     hud_mon_start();
     fx_at_start();
+    bo3_seatcam_start();                /* BO3_SEATCAM: a VR test camera (seatcam.c) */
     drive_log_start();
     pace_log_start();
     /* BO-106: input.control_scheme (controls.c). */
