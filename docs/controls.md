@@ -112,6 +112,139 @@ The PS2 driving layout follows the same split: in the two-player stage that
 controller goes by player 2's event, and in the one-player stage and Party Crash
 it goes by player 1's, so a lone controller keeps the PS2 layout there.
 
+## Racing wheel and pedals (Windows, Linux, Mac; SDL hosts)
+
+A wheel base and its pedals are plain HID joysticks, not game controllers, so
+they are bound by hand, one environment variable per control, as
+`VID:PID:AXIS` (the USB ids in hex, then the axis index, in SDL's order). A
+trailing `!` is for a pedal that reads high when released. The steering and the
+pedals may be two devices. Setting any one of the three turns the wheel on;
+they merge into player 1 like the keyboard does (a trigger the larger of the two).
+
+| Variable | Control | Default |
+|---|---|---|
+| `RECOMP_WHEEL_STEER` | steering: the left stick's X | off |
+| `RECOMP_WHEEL_THROTTLE` | throttle: the right trigger | off |
+| `RECOMP_WHEEL_BRAKE` | brake and reverse: the left trigger | off |
+| `RECOMP_WHEEL_RANGE` | degrees the base turns lock to lock | 900 |
+| `RECOMP_WHEEL_LOCK` | degrees lock to lock the game gets, up to the range | 540 |
+| `RECOMP_WHEEL_DEADZONE` | pedal deadzone, percent of travel | 4 |
+| `RECOMP_WHEEL_STEER_DEAD` | steering deadzone, percent of the stick's travel after the lock (the wheel inside it reads centred) | 0 |
+| `RECOMP_WHEEL_STEER_SKIP` | the band around the stick's centre the game ignores, percent; the wheel jumps over it | 0 |
+| `RECOMP_WHEEL_LOG` | `1`: log the devices opened and the raw axes | off |
+
+Example, a Thrustmaster base (`044F:B696`) with separate pedals (`044F:B6FC`)
+whose axes are X (throttle) and Z (brake):
+
+    set RECOMP_WHEEL_STEER=044F:B696:0
+    set RECOMP_WHEEL_THROTTLE=044F:B6FC:0
+    set RECOMP_WHEEL_BRAKE=044F:B6FC:2
+
+The axis index is SDL's, which need not be the order Windows' game controller
+panel shows. Run with `RECOMP_WHEEL_LOG=1`: it prints each device it opens
+(name, axis count) and, once a second while a control moves, the raw values and
+what the title is given. A wheel is always the Xbox layout, whatever Driving
+controls says: its pedals are the triggers.
+
+### Buttons and the hat
+
+Each button is bound as `VID:PID:N`, N being the joystick's button index from 0
+(the hat's index is usually 0). A button is the Xbox button the title acts on:
+
+| Variable | Xbox button | What it does |
+|---|---|---|
+| `RECOMP_WHEEL_BTN_ACCEPT` | A | confirms in menus; boost in a race; impact time in a crash |
+| `RECOMP_WHEEL_BTN_BACK` | B | back in menus; the Crashbreaker |
+| `RECOMP_WHEEL_BTN_PAUSE` | Start | pauses a race |
+| `RECOMP_WHEEL_BTN_LOOKBACK` | X | look back |
+| `RECOMP_WHEEL_BTN_VIEW` | Y | change view |
+| `RECOMP_WHEEL_HAT` | D-pad and left stick | menus; a crash's aftertouch |
+
+The hat is both the D-pad and the left stick, as the keyboard's arrows are,
+because the aftertouch after a crash is steered with the left stick and the
+D-pad does nothing there. Its up and down are the stick's Y, which driving does
+not use. Its left and right are the stick's X only while the wheel's own
+steering is within about a quarter of full lock (a wheel held straight still reads a little off centre), so the hat never fights a wheel you are turning.
+
+`tools/win/wheel-buttons.ps1` asks for each control in turn and prints the
+lines to use. With `RECOMP_WHEEL_LOG=1` the game logs every button of an open
+device going down or up by the index SDL gives it (and the hat), bound or not;
+this is how to check a number against the physical button.
+
+### The title's dead spot
+
+The title ignores a band around the left stick's centre (a pad stick has play), so a
+wheel with a linear mapping does nothing for its first degrees: about 20 degrees at a
+360 degree lock, reported on a T818. `RECOMP_WHEEL_STEER_SKIP=<percent>` makes the wheel
+jump over that band: past the centre, the stick starts at that percent and rises to full
+at full lock, so the first degrees already steer. The band is a share of the stick's
+travel: 20 degrees at a 360 degree lock (180 degrees each way) is 20/180, about 11, so
+`RECOMP_WHEEL_STEER_SKIP=11` is the first thing to try; change it by feel (too much
+and the car turns in with a jerk as soon as the wheel leaves the centre, too little and
+a dead spot is left).
+
+It needs `RECOMP_WHEEL_STEER_DEAD` too: a base that rests a little off centre (a T818
+reads about 4% of the stick at a 360 degree lock, 1.6% of the base's travel) would
+otherwise steer at rest as soon as the dead band is skipped. Try 5, and raise it if the
+car creeps at rest; the wheel inside it reads centred, and what is left of the travel is
+stretched to full. Both are 0 (the plain linear map) unless set. The title's band was
+not measured; the 11 comes from the felt 20 degrees.
+
+### Force feedback: the centring spring
+
+`RECOMP_WHEEL_FFB_SPRING=<percent>` (default 0, off; never above 50) gives the
+base a centring spring that it runs itself, so it adds no latency. The number
+is the force at the software lock's edge (`RECOMP_WHEEL_LOCK`) as a percentage
+of the base's maximum; beyond the edge the force holds, it does not grow, so the
+spring is never a wall. Start low (10) and raise it. Needs `RECOMP_WHEEL_STEER`
+and a base that offers a spring and a gain (the T818 does).
+
+It is passive (it only resists), fades in over 1.5 s after the start, and goes
+quiet at once, over about 150 ms, while the overlay is open, while the game's
+window is not in front, and when the game ends (the same rule as the title's
+rumble). If the base cannot do a spring or a gain, or the spring is refused, it
+stays off and the log says why (`[WHEEL] force feedback: ...`). A runaway guard
+cuts the force if the wheel stays near an end of the base's travel for 1.5 s
+with the spring on (a spring pulls to the centre, so only a hand or a force in
+the wrong direction keeps it there), and lets it back when the wheel is back
+inside half the travel. The first version had the left half's coefficient
+negated, which made that half push the wheel out to the end stop; the guard
+exists because a unit test cannot see which way a real base pushes. The game sends
+the wheel no other force. Not tested here: what the base does if the game is
+killed while a spring is running (the driver should let the effect go with the
+process).
+
+#### The spring follows the car (opt-in)
+
+With the spring on, two more settings let it follow what the car is doing. The game
+tells the toolkit, each poll of the pad, whether a race is running and how fast the
+car goes (`src/game/wheelfeed.c`, from the shared car snapshot in
+[wheel-force-feedback-proposal.md](wheel-force-feedback-proposal.md)). Both are
+off by default, and both only ever lower the spring, never raise it above
+`RECOMP_WHEEL_FFB_SPRING`:
+
+- `RECOMP_WHEEL_FFB_SPEED=<m/s>`: the speed at which the spring has its whole
+  strength; slower, it is weaker, linearly, down to `RECOMP_WHEEL_FFB_REST`
+  percent of it (default 30) at a standstill. 40 m/s is about 145 km/h. A
+  parked car then has a light wheel and a fast one a firm one.
+- `RECOMP_WHEEL_FFB_RACE_ONLY=1`: outside a race (menus, the pause menu, the
+  results, a loading screen) the spring fades out, and back in when the race
+  runs. A race counts while the HUD's update has run in the last 0.3 s.
+
+The level moves at most 1.0 in a second up and 0.4 s down, so a speed change or
+a pause is never a step in the force, and the spring's own strength is rewritten
+on the base only for a change of about 1 percent. The runaway guard and the
+mute/fade rules above still apply. Without a feed (a build of the toolkit with
+another game) the spring is as before. `RECOMP_WHEEL_LOG=1` says when it sees a
+race start and stop. Not tested on a wheel yet: how the speed scaling feels,
+and whether this base accepts an update of a running spring cleanly.
+
+Not done: the rest of force feedback (cornering force, impacts, road texture;
+see [wheel-force-feedback-proposal.md](wheel-force-feedback-proposal.md)), the
+wheel's paddles beyond the buttons above, a clutch (the title has none), a
+response curve, and a setting in the overlay. This needs the toolkit's
+`XBOX_INPUT_SRC_WHEEL` and `src/input/wheel_pad.h`.
+
 ## Touch (Android)
 
 Without a controller the Android build shows on-screen controls (the

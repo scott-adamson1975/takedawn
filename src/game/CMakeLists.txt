@@ -25,6 +25,9 @@ if(ANDROID)
         controls.c
         autopilot.c
         softbody.c
+        telemetry.c
+        wheelfeed.c
+        carstate.c
         menuentry.c
         tutorial.c
         scoreboard.c
@@ -56,6 +59,9 @@ add_executable(burnout3
     controls.c
     autopilot.c
     softbody.c
+    telemetry.c
+    wheelfeed.c
+    carstate.c
     menuentry.c
     tutorial.c
     scoreboard.c

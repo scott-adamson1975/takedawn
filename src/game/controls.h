@@ -186,6 +186,17 @@ void bo3_autopilot_start(uint32_t (*flips)(void));
 /* graphics.softbody: soft-body vehicle damage, drawn only (softbody.c). */
 void bo3_softbody_start(uint32_t (*flips)(void));
 
+/* BO3_TELEMETRY=<prefix>: player 1's car state once a frame of a race, to
+ * <prefix>.csv and a raw car dump to <prefix>.bin (telemetry.c). Sampled from
+ * main.c's drive_log mark. */
+void bo3_telemetry_start(uint32_t (*flips)(void));
+int  bo3_telemetry_active(void);
+void bo3_telemetry_sample(uint32_t car);
+
+/* RECOMP_WHEEL_FFB_SPEED / RECOMP_WHEEL_FFB_RACE_ONLY: tells the wheel glue the car (wheelfeed.c). Before drive_log_start. */
+void bo3_wheel_feed_start(void);
+void bo3_telemetry_impact(float strength, const float dir[3]);  /* carstate.c's collision mark */
+
 /* interface.menu_entry: TAKEDAWN SETTINGS in the title's Settings menu (menuentry.c, BO-133). */
 void bo3_menu_entry_start(void);
 
