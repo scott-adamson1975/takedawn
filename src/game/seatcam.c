@@ -104,7 +104,8 @@ void bo3_seatcam_start(void)
 {
     const char *e = getenv("BO3_SEATCAM");
 
-    if (!e || !*e || *e == '0')
+    /* Off when unset, empty or exactly "0": a seat such as "0,0.66,0.15" starts with a 0 (no sideways offset). */
+    if (!e || !*e || !strcmp(e, "0"))
         return;
     s_on = 1;
     {
