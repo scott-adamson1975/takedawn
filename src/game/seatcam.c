@@ -47,6 +47,7 @@ typedef struct xbox_vr_pose {           /* the same layout as oxr.h's */
     unsigned id;
 } xbox_vr_pose;
 int xbox_VrPose(xbox_vr_pose *out);
+void xbox_VrRecentre(void);
 
 #define SC_PTR(va)  ((float *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define SC_M32(va)  (*(const uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
@@ -420,6 +421,21 @@ void bo3_seatcam_start(void)
 
 void bo3_seatcam_restore(void)
 {
+    if (s_vr) {
+        /* Recentre, in the race and in the menus: Tab or C on the keyboard, the pad's right stick in (R3). */
+        static int was;
+        int now = pad_recentre();
+
+#ifdef _WIN32
+        now |= (GetAsyncKeyState(VK_TAB) & 0x8000) != 0 || (GetAsyncKeyState('C') & 0x8000) != 0;
+#endif
+        if (now && !was) {
+            s_vr_ref_set = 0;                       /* the race: the next pose is "ahead" and the origin */
+            xbox_VrRecentre();                      /* the menus: the screen comes in front of the player again */
+            slog("[SEATCAM] recentred\n");
+        }
+        was = now;
+    }
     if (s_on) {
         /* At the flip, after the picture's draw: did the title switch the car's draw off during the render?
          * (At the render's start the byte read 1 in both of its views.) Logged on a change. */
@@ -756,7 +772,7 @@ void bo3_seatcam_apply(void)
             float h, ch, sh, o[3][3];
             int a;
 
-            if (!s_vr_ref_set || (GetAsyncKeyState('C') & 0x8000) || pad_recentre()) {
+            if (!s_vr_ref_set) {
                 h = atan2f(-ax[2][0], -ax[2][2]);            /* the heading of the head's forward (= -back) */
                 s_vr_ref[0] = h;
                 s_vr_ref[1] = s_vr_pose.p[0];
@@ -785,6 +801,9 @@ void bo3_seatcam_apply(void)
                 float dx = s_vr_pose.p[0] - s_vr_ref[1], dy = s_vr_pose.p[1] - s_vr_ref[2], dz = s_vr_pose.p[2] - s_vr_ref[3];
                 float rx = dx * ch + dz * sh, rz = -dx * sh + dz * ch;
 
+                if (rx > 0.6f) rx = 0.6f; else if (rx < -0.6f) rx = -0.6f;       /* a lean, not a walk */
+                if (dy > 0.6f) dy = 0.6f; else if (dy < -0.6f) dy = -0.6f;
+                if (rz > 0.6f) rz = 0.6f; else if (rz < -0.6f) rz = -0.6f;
                 for (i = 0; i < 3; i++)
                     s_vr_off[i] = rx * -L[i] + dy * U[i] + rz * -F[i];
             }
@@ -850,7 +869,7 @@ void bo3_seatcam_apply(void)
     s_cam.va = cp;
     s_cam.applied = 1;
     near_apply();
-    if (s_vr_pose.id && getenv("BO3_VR_FOV")) {              /* off unless asked: the first test with it showed the scene doubled */
+    if (s_vr_pose.id && !(getenv("BO3_VR_FOV") && *getenv("BO3_VR_FOV") == '0')) {   /* the headset's window (BO3_VR_FOV=0: the title's) */
         uint32_t rc = SC_M32(SC_VIEW + 0x58u);
 
         if (rc > 0x10000u && rc < 0x08000000u) {             /* the headset's window, for its field of view */
