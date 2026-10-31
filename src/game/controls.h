@@ -203,6 +203,8 @@ void bo3_seatcam_start(void);
 void bo3_seatcam_apply(void);
 void bo3_seatcam_restore(void);
 void bo3_seatcam_stereo_scene(int scene);   /* main.c's scene / UI marks: the stereo shift on for the scene, 0 for the HUD (--stereo[=ipd], BO3_SEATCAM_STEREO) */
+void bo3_seatcam_car_draw(int begin);        /* softbody.c: the player car draw begins (1) / ends (0), esi the car: the body drawn with both faces */
+void bo3_seatcam_marks(void);               /* the marks that call it, when softbody is off */
 void bo3_telemetry_impact(float strength, const float dir[3]);  /* carstate.c's collision mark */
 
 /* interface.menu_entry: TAKEDAWN SETTINGS in the title's Settings menu (menuentry.c, BO-133). */

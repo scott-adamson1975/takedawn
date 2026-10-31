@@ -62,6 +62,8 @@
 
 extern RECOMP_TLS uint32_t g_eax, g_esi, g_ebp, g_esp;
 extern ptrdiff_t g_xbox_mem_offset;
+void bo3_seatcam_car_draw(int begin);   /* seatcam.c: the car body drawn with both faces (VR) */
+void bo3_seatcam_marks(void);
 extern uint32_t xbox_ContiguousAllocEx(uint32_t size, uint32_t alignment, uint32_t phys_lo, uint32_t phys_hi);
 extern int xbox_ContiguousFree(uint32_t va);
 
@@ -2167,6 +2169,8 @@ static void wheel_bend(sb_car *c, uint32_t w, const float *hub)
 static void sb_draw(void)
 {
     uint32_t car = g_esi, bgv, flip;
+
+    bo3_seatcam_car_draw(1);
     sb_car *c;
     int i;
 
@@ -2334,6 +2338,8 @@ static void sb_drawn(void)
 {
     sb_car *c = car_find(g_esi);
     uint32_t w;
+
+    bo3_seatcam_car_draw(0);
 
     if (!c || !c->wheel_bent)
         return;
@@ -2864,8 +2870,10 @@ void bo3_softbody_start(uint32_t (*flips)(void))
     const char *e = recomp_env(RENV_GFX_SOFTBODY), *b = getenv("BO3_SOFTBODY");
     if (b && *b)                     /* the old switch still works (tests) */
         e = b;
-    if (!e || !*e || *e == '0')
+    if (!e || !*e || *e == '0') {
+        bo3_seatcam_marks();             /* the car-draw marks are the seat camera's then */
         return;
+    }
     s_log = getenv("BO3_SOFTBODY_LOG") != NULL;
     {
         const char *t = getenv("BO3_SOFTBODY_TRAFFIC");

@@ -39,6 +39,10 @@
 #include <stdarg.h>
 
 #include "controls.h"
+#include "platform/recomp_patch.h"
+#include "recomp_types.h"
+
+extern RECOMP_TLS uint32_t g_esi;
 
 extern ptrdiff_t g_xbox_mem_offset;
 int xbox_VrInit(void);                  /* toolkit src/video/oxr.h */
@@ -232,6 +236,28 @@ static void stereo_end(void)
         s_stereo_on = 0;
         stereo_mark(0);
     }
+}
+
+/* The player's car body drawn with both faces (BO3_VR_CULL=0 leaves it): its shell is one-sided, so from the seat the rear and the
+ * roof are not there. The title's own marks bracket the draw (config/patches.json: sb_draw at the start of sub_0018DE00, esi the car,
+ * and sb_drawn after its call that draws the model); softbody.c calls these from its handlers, and bo3_seatcam_marks takes the
+ * marks itself when softbody is off. */
+void bo3_seatcam_car_draw(int begin)
+{
+    static int off = -1;
+
+    if (off < 0)
+        off = getenv("BO3_VR_CULL") && *getenv("BO3_VR_CULL") == '0';
+    if (off || !s_stereo_on || g_esi != SC_CAR1)
+        return;
+    stereo_mark(begin ? (s_stereo_scene | 1u) : s_stereo_scene);   /* nv2a_pb_state.h's NV2A_STEREO_NOCULL */
+}
+static void car_mark_begin(void) { bo3_seatcam_car_draw(1); }
+static void car_mark_end(void)   { bo3_seatcam_car_draw(0); }
+void bo3_seatcam_marks(void)
+{
+    recomp_patch_on_mark("sb_draw", car_mark_begin);
+    recomp_patch_on_mark("sb_drawn", car_mark_end);
 }
 
 /* main.c's scene and UI marks (hdr_scene, hdr_ui): the shift for the scene, none for the HUD and menus. */
