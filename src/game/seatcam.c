@@ -93,6 +93,7 @@ static int s_vr_ref_set;
 static int s_np_dirty;                  /* the seat point was nudged and not yet saved */
 static unsigned s_np_idle;
 static float s_vr_lean[3];              /* the same in seat terms: right, up, ahead (metres) */
+static int s_hide_driver = 1;           /* BO3_VR_DRIVER=0 keeps the driver */
 static int s_seat_slot = -1;            /* the seat slot the camera is at now (0 seat, 1 bonnet), -1 in a chase view */
 static float s_vr_off[3];               /* the head's move from the recentre, along the world axes */
 static float s_vw_keep[4], *s_vw_at;    /* the title's view window, put back at the flip */
@@ -161,6 +162,7 @@ static void near_apply(void)
  * + 0x70 (checked against each other; 0.75, a 16:9 picture's, when they do not agree). Bloom and motion blur
  * (render flags 12 and 14, 0x4D61C4 +) read the whole picture back and mix the eyes, so they are off while stereo is on. */
 void nv2a_pb_stream_mark_stereo(uint32_t va, uint32_t value);       /* toolkit nv2a_pb_state.h */
+void nv2a_pb_stream_hide_set(const float *box);
 #define SC_STEREO_ON 0x40000000u
 #define SC_RFLAGS    0x004D61C4u
 static int s_stereo_on;                 /* this picture is drawn as a pair */
@@ -248,9 +250,14 @@ void bo3_seatcam_car_draw(int begin)
 
     if (off < 0)
         off = getenv("BO3_VR_CULL") && *getenv("BO3_VR_CULL") == '0';
+    if (getenv("BO3_VR_DRIVER") && *getenv("BO3_VR_DRIVER") == '0')
+        s_hide_driver = 0;
     if (off || !s_stereo_on || g_esi != SC_CAR1)
         return;
-    stereo_mark(begin ? (s_stereo_scene | 1u) : s_stereo_scene);   /* nv2a_pb_state.h's NV2A_STEREO_NOCULL */
+    if (begin && s_seat_slot < 0)
+        return;                                 /* a chase view: the car is drawn as the title does */
+    /* nv2a_pb_state.h's NV2A_STEREO_NOCULL (1) and NV2A_STEREO_HIDE (2: the driver's box) */
+    stereo_mark(begin ? (s_stereo_scene | 1u | (s_hide_driver ? 2u : 0u)) : s_stereo_scene);
 }
 static void car_mark_begin(void) { bo3_seatcam_car_draw(1); }
 static void car_mark_end(void)   { bo3_seatcam_car_draw(0); }
@@ -788,6 +795,16 @@ void bo3_seatcam_apply(void)
     if (applied_n % 600 == 0)
         slog("[SEATCAM] %u renders drawn from the seat so far\n", applied_n);
     sv = seat_update(dist < SC_FRONT_D);
+    if (s_seat_slot >= 0 && s_hide_driver) {
+        /* The driver's box, in the model's space (x along the car's left, y up, z ahead), around the seat point: head and
+         * shoulders, not the wheel (ahead of the eye) or the seat's base. Whole triangles inside it are not drawn. */
+        float box[6];
+
+        box[0] = -sv[0] - 0.30f;  box[3] = -sv[0] + 0.30f;
+        box[1] = sv[1] - 0.40f;   box[4] = sv[1] + 0.20f;
+        box[2] = sv[2] - 0.60f;   box[5] = sv[2] + 0.05f;
+        nv2a_pb_stream_hide_set(box);
+    }
     memcpy(n, c, sizeof n);
     {
         /* The look: turn the car's axes about the seat. Written in the axes themselves (left, up, forward) so
