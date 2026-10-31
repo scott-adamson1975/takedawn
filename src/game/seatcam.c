@@ -86,6 +86,10 @@ static struct {
 static xbox_vr_pose s_vr_pose;          /* the headset pose this render is drawn from (id 0: none) */
 static float s_vr_ref[4];               /* the recentre: the yaw (radians) and the head position then */
 static int s_vr_ref_set;
+static int s_np_dirty;                  /* the seat point was nudged and not yet saved */
+static unsigned s_np_idle;
+static float s_vr_lean[3];              /* the same in seat terms: right, up, ahead (metres) */
+static int s_seat_slot = -1;            /* the seat slot the camera is at now (0 seat, 1 bonnet), -1 in a chase view */
 static float s_vr_off[3];               /* the head's move from the recentre, along the world axes */
 static float s_vw_keep[4], *s_vw_at;    /* the title's view window, put back at the flip */
 static float s_yaw, s_pitch;            /* the look now, radians: right and up positive */
@@ -349,6 +353,7 @@ void bo3_seatcam_args(int argc, char **argv)
 }
 
 static void tab_put(uint32_t key, int slot, const float *v);
+static void tab_save(uint32_t key, int slot);
 static int tab_find(uint32_t key, int slot);
 
 void bo3_seatcam_start(void)
@@ -431,6 +436,25 @@ void bo3_seatcam_restore(void)
 #ifdef _WIN32
         now |= (GetAsyncKeyState(VK_TAB) & 0x8000) != 0 || (GetAsyncKeyState('C') & 0x8000) != 0;
 #endif
+        static unsigned held;
+        static float lean_at_press[3];
+
+        if (now && !was) {
+            memcpy(lean_at_press, s_vr_lean, sizeof lean_at_press);     /* where the head was, before the recentre */
+            held = 0;
+        }
+        if (now && was && ++held == 90) {                               /* held for about 1.5 s: this is the seat */
+            if (s_curkey && s_seat_slot >= 0) {
+                float *c = s_cur[s_seat_slot];
+
+                c[0] += lean_at_press[0];
+                c[1] += lean_at_press[1];
+                c[2] += lean_at_press[2];
+                tab_save(s_curkey, s_seat_slot);
+                slog("[SEATCAM] recentre held: the seat of car model 0x%08X is now right %.3f up %.3f ahead %.3f (saved)\n", s_curkey, c[0],
+                     c[1], c[2]);
+            }
+        }
         if (now && !was) {
             s_vr_ref_set = 0;                       /* the race: the next pose is "ahead" and the origin */
             xbox_VrRecentre();                      /* the menus: the screen comes in front of the player again */
@@ -612,12 +636,20 @@ static const float *seat_update(int front)
         if (GetAsyncKeyState(VK_NUMPAD2) & 0x8000) { c[2] -= step; moved = 1; }   /* back */
         if (GetAsyncKeyState(VK_NUMPAD9) & 0x8000) { c[1] += step; moved = 1; }   /* up */
         if (GetAsyncKeyState(VK_NUMPAD3) & 0x8000) { c[1] -= step; moved = 1; }   /* down */
+        s_seat_slot = slot;
         if (moved) {
             static unsigned t;
+
+            s_np_dirty = 1;
+            s_np_idle = 0;
 
             if ((t++ % 30) == 0)
                 slog("[SEATCAM] %s now right %.3f up %.3f ahead %.3f\n", slot ? "over the bonnet" : "the seat", c[0],
                      c[1], c[2]);
+        }
+        if (!moved && s_np_dirty && ++s_np_idle > 120 && s_curkey) {   /* two seconds after the last nudge: kept for this car */
+            s_np_dirty = 0;
+            tab_save(s_curkey, slot);
         }
         if (GetAsyncKeyState(VK_NUMPAD5) & 0x8000) {
             if (!reset_down) {
@@ -648,6 +680,7 @@ static const float *seat_update(int front)
     }
 #endif
     if (!front && s_alt) {
+        s_seat_slot = -1;
         s_pitch_bias = k_alt[s_alt].pitch_deg * 3.14159265f / 180.0f;
         return k_alt[s_alt].v;
     }
@@ -806,11 +839,15 @@ void bo3_seatcam_apply(void)
                 if (rx > 0.6f) rx = 0.6f; else if (rx < -0.6f) rx = -0.6f;       /* a lean, not a walk */
                 if (dy > 0.6f) dy = 0.6f; else if (dy < -0.6f) dy = -0.6f;
                 if (rz > 0.6f) rz = 0.6f; else if (rz < -0.6f) rz = -0.6f;
+                s_vr_lean[0] = rx;
+                s_vr_lean[1] = dy;
+                s_vr_lean[2] = -rz;
                 for (i = 0; i < 3; i++)
                     s_vr_off[i] = rx * -L[i] + dy * U[i] + rz * -F[i];
             }
         } else {
             s_vr_off[0] = s_vr_off[1] = s_vr_off[2] = 0.0f;
+            s_vr_lean[0] = s_vr_lean[1] = s_vr_lean[2] = 0.0f;
         }
         /* The camera object is not a matrix (its first log dump: row 0 zero, row 1 starting 90.0, row 2 a unit
          * quaternion, row 3 the position): + 0x20 holds the orientation as a quaternion (x, y, z, w) and + 0x30
