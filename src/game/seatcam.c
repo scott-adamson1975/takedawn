@@ -798,11 +798,26 @@ void bo3_seatcam_apply(void)
     if (s_seat_slot >= 0 && s_hide_driver) {
         /* The driver's box, in the model's space (x along the car's left, y up, z ahead), around the seat point: head and
          * shoulders, not the wheel (ahead of the eye) or the seat's base. Whole triangles inside it are not drawn. */
-        float box[6];
+        float box[6], c3[3];
+        static uint32_t told_key;
 
-        box[0] = -sv[0] - 0.30f;  box[3] = -sv[0] + 0.30f;
-        box[1] = sv[1] - 0.40f;   box[4] = sv[1] + 0.20f;
-        box[2] = sv[2] - 0.60f;   box[5] = sv[2] + 0.05f;
+        /* The driver's helmet is known for some models (docs/vr-openxr-proposal.md: found in the model's vertices; right, up,
+         * ahead of the car origin, so x is the negative of "right"); the others use the seat point, which is only the eye. */
+        if (s_curkey == 0x00090000u || s_curkey == 0x0008A000u) {
+            c3[0] = -0.006f;  c3[1] = 0.718f;  c3[2] = -0.280f;
+            box[0] = c3[0] - 0.30f;  box[3] = c3[0] + 0.30f;
+            box[1] = c3[1] - 0.45f;  box[4] = c3[1] + 0.20f;
+            box[2] = c3[2] - 0.35f;  box[5] = c3[2] + 0.20f;
+        } else {
+            box[0] = -sv[0] - 0.30f;  box[3] = -sv[0] + 0.30f;
+            box[1] = sv[1] - 0.40f;   box[4] = sv[1] + 0.20f;
+            box[2] = sv[2] - 0.60f;   box[5] = sv[2] + 0.05f;
+        }
+        if (told_key != s_curkey) {
+            told_key = s_curkey;
+            slog("[SEATCAM] driver box for car model 0x%08X: x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f (%s)\n", s_curkey, box[0], box[3],
+                 box[1], box[4], box[2], box[5], s_curkey == 0x00090000u || s_curkey == 0x0008A000u ? "the helmet" : "the seat point");
+        }
         nv2a_pb_stream_hide_set(box);
     }
     memcpy(n, c, sizeof n);
