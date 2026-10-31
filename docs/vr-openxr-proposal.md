@@ -381,4 +381,56 @@ run at their own rates (60 Hz game, the runtime's rate), paced by `xrWaitFrame` 
 tracking drives the seat camera (and the view window is set to the headset's field of view), with the layer's poses
 the ones the frame was drawn with.
 
-Built and compiled; **not yet run in a headset.**
+Built and compiled; run in a headset on 2026-10-30 (see "What running it showed" below).
+
+## What running it showed (2026-10-30 and 31, Quest 3 over SteamVR, RTX 4090)
+
+**The Vulkan swapchain is not usable here.** SteamVR 2.18.4 crashes with an access violation inside `xrCreateSwapchain`
+for any Vulkan session on this PC (the same address every time; reproduced in `tools/win/xr-probe.c` for every swapchain
+shape, flow, Vulkan version and with layers off). A Direct3D 11 swapchain works, so the headset path is a bridge
+(`RECOMP_VR_API=vulkan` keeps the Vulkan one): the renderer's Vulkan device is made on the runtime's GPU (by LUID) with
+`VK_KHR_external_memory_win32`; a shared D3D11 texture is imported as a Vulkan image, each frame is copied into it with
+the CPU waiting for the copy, then `CopySubresourceRegion` puts each eye's half into that eye's own swapchain image.
+**One swapchain per eye**, because SteamVR did not honour the sub-image rectangles of a single shared swapchain (each
+eye showed both halves).
+
+**Head tracking (milestone 2).** `xrLocateViews` each frame in the LOCAL space gives the head pose (the left eye's
+orientation, the middle of the eyes), the eye separation and the wider side of each field of view. The pose goes into a
+ring of 256 by an id that the game puts in the stereo value of the picture it draws (`nv2a_stereo_pack`: the eye shift K
+and the pose id), so a frame is shown with exactly the pose it was drawn from. The seat camera turns the car's axes by
+the head's orientation (yaw relative to a reference taken at the first pose and at each recentre; Tab, C or the pad's R3)
+and adds the head's move from the reference (limited to 0.6 m a side) to the seat point. Holding the key for about 1.5
+seconds adds the lean to the car's stored seat point. The numpad's nudges save themselves 2 seconds after the last one.
+The game waits for the runtime and the headset at start-up (`RECOMP_VR_WAIT`, 300 s).
+
+**Stereo in stereo, found and fixed.** The title draws the scene into other 640 x 480 targets and composites them into
+the main surface. The stereo code treated every target of 640 x 480 or more as the picture, so the composite drew the
+side-by-side pair again inside each half. A draw that reads a render target of that size is now drawn once across the
+whole surface (`rt_pass` in `nv2a_pb_vulkan.c`). The diagnosis was made from window screenshots
+(`RECOMP_WINDOW_SHOT`) and a log of the stereo draws (`RECOMP_STEREO_DEBUG`).
+
+**Field of view and shape.** Changing the RwCamera's view window did not change the picture: the title builds the
+window every frame (`sub_001C8A60`) from the camera's field of view (+0x10) and two numbers in the view (+0x70, +0x74:
+x = tan(fov / 2) * view[0x70], y = x / view[0x74]), then the view matrix from it. Those two numbers are set to the
+headset's tangents; the layer claims the window each frame was really drawn with (`xbox_VrFrame`), because a claim that
+differs from the drawn frustum stretches the picture (cars came out tall).
+
+**HUD.** In a race the HUD (a stereo value with no eye shift) is drawn at 0.5 scale in each eye, its bottom edge at 0.3 of
+the height below the middle, and with its corners moved by a push constant (`eyepc.ui`, negative: out) so that it sits
+in front of the player (`RECOMP_STEREO_HUD_SCALE`, `_BOTTOM`, `_ROUND`). Menus and loading screens are a 2.9 m wide
+quad layer (aspect 1.42, `RECOMP_VR_MENU_ASPECT`) placed 2 m ahead of the player at the start of the menu and again at a
+recentre.
+
+**Quality.** Render scale 6 (the toolkit's limit is now 8) gives about 1920 x 2880 for each eye; the headset gets the
+frame after the post passes, so `RECOMP_GFX_AA=smaa` reaches it. The picture is still grainy and dark in the headset;
+the cause is not found (Steam Link's compression of dark detail is the guess; the monitor window can be compared).
+DLSS and FSR 2/3 were considered and not done: they need motion vectors, depth and a jittered camera from the renderer,
+which a recompiled title does not have; FSR 1 would add nothing to a frame already larger than the lens.
+
+**The car from the seat.** The car's body is one-sided, so from the seat the rear and roof are missing. The player's car
+body is drawn with both faces (`NV2A_STEREO_NOCULL`, set between the title's `sb_draw` and `sb_drawn` marks), its glass
+(the blended draws) is not drawn, and triangles wholly inside a box around the driver are dropped
+(`NV2A_STEREO_HIDE`, `nv2a_pb_stream_hide_set`). **The driver is still visible:** the box is placed at the known helmet
+position for two models and at the seat point for the others, and neither removed the driver on the owner's car (the
+logged car draws are in `RECOMP_STEREO_DEBUG`; the body is about 23 draws a frame, the interior one of 1863 indices).
+Left as it is for now. Next ideas: find the driver's vertices per model offline, or a larger near plane for the car draw.
