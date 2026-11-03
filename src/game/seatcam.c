@@ -93,6 +93,7 @@ static int s_vr_ref_set;
 static int s_np_dirty;                  /* the seat point was nudged and not yet saved */
 static unsigned s_np_idle;
 static float s_vr_lean[3];              /* the same in seat terms: right, up, ahead (metres) */
+static int s_boost_fx = 1;               /* BO3_VR_BOOSTFX=0: the boost's field of view widening is not shown */
 static int s_hide_driver = 1;           /* BO3_VR_DRIVER=0 keeps the driver */
 static int s_seat_slot = -1;            /* the seat slot the camera is at now (0 seat, 1 bonnet), -1 in a chase view */
 static float s_vr_off[3];               /* the head's move from the recentre, along the world axes */
@@ -252,6 +253,8 @@ void bo3_seatcam_car_draw(int begin)
         off = getenv("BO3_VR_CULL") && *getenv("BO3_VR_CULL") == '0';
     if (getenv("BO3_VR_DRIVER") && *getenv("BO3_VR_DRIVER") == '0')
         s_hide_driver = 0;
+    if (getenv("BO3_VR_BOOSTFX") && *getenv("BO3_VR_BOOSTFX") == '0')
+        s_boost_fx = 0;
     if (off || !s_stereo_on || g_esi != SC_CAR1)
         return;
     if (begin && s_seat_slot < 0)
@@ -983,7 +986,19 @@ void bo3_seatcam_apply(void)
                 slog("[SEATCAM] view window: the title's numbers %.4f and %.4f (fov %.1f) -> the headset's %.4f x %.4f\n",
                      vw[0x70 / 4], vw[0x74 / 4], fov, hx, hy);
             }
-            vw[0x70 / 4] = hx / t;
+            /* The title widens the camera's field of view while boosting (the stretched, tunnel look). Setting the numbers to the
+             * headset's tangents divided by tan(fov / 2) would cancel that; without the division the window is the headset's times
+             * tan(fov / 2) (1 at 90 degrees), so the boost's widening is drawn, and the layer claims the headset's own field of
+             * view below, which squeezes the wider picture into it: the stretch. BO3_VR_BOOSTFX=0 keeps the picture undistorted. */
+            {
+                static float last_fov = 90.0f;
+
+                if (fov > last_fov + 1.0f || fov < last_fov - 1.0f) {        /* the boost's widening, for the log */
+                    last_fov = fov;
+                    slog("[SEATCAM] the camera's field of view is now %.1f degrees"\n", fov);
+                }
+            }
+            vw[0x70 / 4] = s_boost_fx ? hx : hx / t;
             vw[0x74 / 4] = hx / hy;
         }
     }
@@ -995,7 +1010,11 @@ void bo3_seatcam_apply(void)
         if (rc > 0x10000u && rc < 0x08000000u) {
             const float *w = SC_PTR(rc) + 0x68 / 4;
 
-            xbox_VrFrame(s_vr_pose.id, w[0], w[1]);
+            float t = 1.0f, fov = c[0x10 / 4];
+
+            if (s_boost_fx && fov > 20.0f && fov < 170.0f)
+                t = tanf(fov * 0.5f * 3.14159265f / 180.0f);
+            xbox_VrFrame(s_vr_pose.id, w[0] / t, w[1] / t);       /* the frustum without the title's widening */
         }
     }
 }
