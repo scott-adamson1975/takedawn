@@ -995,7 +995,7 @@ void bo3_seatcam_apply(void)
 
                 if (fov > last_fov + 1.0f || fov < last_fov - 1.0f) {        /* the boost's widening, for the log */
                     last_fov = fov;
-                    slog("[SEATCAM] the camera's field of view is now %.1f degrees"\n", fov);
+                    slog("[SEATCAM] the camera's field of view is now %.1f degrees\n", fov);
                 }
             }
             vw[0x70 / 4] = s_boost_fx ? hx : hx / t;
