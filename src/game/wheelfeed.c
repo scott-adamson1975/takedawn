@@ -12,6 +12,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "platform/recomp_env.h"
 #include "wheel_pad.h"
@@ -34,10 +35,10 @@ static int car_feed(double *speed)
 /* How much of the spring the front wheels have: 0 in the air, and less in a drift, so that the wheel goes light as the
  * front slips (BO3_WHEEL_AIR and BO3_WHEEL_DRIFT: the percent of the spring left, defaults 0 and 15; 100 leaves it). The angle
  * between where the car points and where it travels: nothing under 12 degrees, the whole drift value from 35. */
-static double grip_feed(double *kick_side, double *kick)
+static double grip_feed(double *kick_side, double *kick, double *jolt)
 {
-    static double air = -1.0, drift = -1.0;
-    static uint32_t last_impact;
+    static double air = -1.0, drift = -1.0, land_sign = 1.0;
+    static uint32_t last_impact, last_land;
     bo3_carstate cs;
     double g = 1.0, a;
 
@@ -45,6 +46,7 @@ static double grip_feed(double *kick_side, double *kick)
         const char *e = getenv("BO3_WHEEL_AIR"), *d = getenv("BO3_WHEEL_DRIFT");
 
         air = e ? atof(e) / 100.0 : 0.0;
+        land_sign = getenv("BO3_WHEEL_LAND_FLIP") && *getenv("BO3_WHEEL_LAND_FLIP") == '1' ? -1.0 : 1.0;
         drift = d ? atof(d) / 100.0 : 0.15;
         air = air < 0.0 ? 0.0 : air > 1.0 ? 1.0 : air;
         drift = drift < 0.0 ? 0.0 : drift > 1.0 ? 1.0 : drift;
@@ -60,12 +62,34 @@ static double grip_feed(double *kick_side, double *kick)
             double len = sqrt((double)cs.impact_dir[0] * cs.impact_dir[0] + (double)cs.impact_dir[1] * cs.impact_dir[1]
                               + (double)cs.impact_dir[2] * cs.impact_dir[2]);
             double x = len > 0.01 ? (double)cs.impact_dir[0] / len : 0.0;
-            double k = (double)cs.impact_strength / 20000.0;
+            double k = (double)cs.impact_strength / 6000.0;
 
-            k = k > 1.0 ? 1.0 : pow(k, 0.6);
-            *kick = k * (0.25 + 0.75 * fabs(x));
-            *kick_side = x < 0.0 ? -1.0 : 1.0;          /* the car's x: right; the direction points into the car */
+            if (recomp_env_on(RENV_INPUT_WHEEL_LOG))
+                fprintf(stderr, "[WHEEL] impact: strength %.0f, direction %.2f %.2f %.2f\n", (double)cs.impact_strength,
+                        (double)cs.impact_dir[0], (double)cs.impact_dir[1], (double)cs.impact_dir[2]);
+            k = k > 1.0 ? 1.0 : pow(k, 0.5);
+            if (k > 0.08) {                              /* a scrape is not a hit */
+                *kick = k * (0.25 + 0.75 * fabs(x));
+                *kick_side = x < 0.0 ? -1.0 : 1.0;      /* the car's x: right; the direction points into the car */
+                *jolt = k;                               /* a shake whatever the side: a wall, traffic */
+            }
         }
+    }
+    if (cs.land_count != last_land) {
+        /* A landing: a shake by the fall speed, and a weight to the side that touched first (the lower side). */
+        double k = (double)cs.land_speed / 10.0, t = (double)cs.land_tilt / 0.12;
+
+        last_land = cs.land_count;
+        k = k > 1.0 ? 1.0 : pow(k, 0.7);
+        t = t > 1.0 ? 1.0 : t < -1.0 ? -1.0 : t;
+        if (recomp_env_on(RENV_INPUT_WHEEL_LOG))
+            fprintf(stderr, "[WHEEL] landing: fall %.1f m/s, tilt %.3f\n", (double)cs.land_speed, (double)cs.land_tilt);
+        if (k * fabs(t) * 1.0 > *kick) {
+            *kick = k * fabs(t);
+            *kick_side = (t < 0.0 ? -1.0 : 1.0) * land_sign;
+        }
+        if (k > *jolt)
+            *jolt = k;
     }
     if (cs.airborne)
         g = air;

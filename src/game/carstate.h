@@ -46,7 +46,12 @@ typedef struct bo3_carstate {
      * 0 when going straight or too slow to tell; about pi in reverse), and whether the car is in the air (its vertical
      * acceleration is near free fall: a jump or a crest). */
     float slip_angle;
-    int airborne;
+    int airborne;                   /* in the air for a while: a sustained near free fall, not a bump */
+    /* A landing from a jump (the air lasted at least 0.13 s): land_count rises with each; the fall speed (m/s) and the
+     * car's tilt at the touch (the left axis's vertical part: positive is the right side lower, so the right wheels
+     * landed first) belong to the latest. */
+    uint32_t land_count;
+    float land_speed, land_tilt;
 } bo3_carstate;
 
 /* A consumer wants the snapshot. Before drive_log_start. */
