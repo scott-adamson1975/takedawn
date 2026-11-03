@@ -11,6 +11,7 @@
  */
 #include <math.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include "platform/recomp_env.h"
 #include "wheel_pad.h"
@@ -33,9 +34,10 @@ static int car_feed(double *speed)
 /* How much of the spring the front wheels have: 0 in the air, and less in a drift, so that the wheel goes light as the
  * front slips (BO3_WHEEL_AIR and BO3_WHEEL_DRIFT: the percent of the spring left, defaults 0 and 15; 100 leaves it). The angle
  * between where the car points and where it travels: nothing under 12 degrees, the whole drift value from 35. */
-static double grip_feed(void)
+static double grip_feed(double *kick_side, double *kick)
 {
     static double air = -1.0, drift = -1.0;
+    static uint32_t last_impact;
     bo3_carstate cs;
     double g = 1.0, a;
 
@@ -49,6 +51,22 @@ static double grip_feed(void)
     }
     if (!bo3_carstate_get(&cs, FEED_AGE_MS))
         return 1.0;
+    if (cs.impact_count != last_impact) {
+        /* A hit (once): the side it pushes the car to and its strength. The strength is an event size, not a measurement (a
+         * run of records of one hit, peaks of 10 000 to 24 000 in a recording), so it is compressed and capped; a hit
+         * along the car (head on or from behind) has little to push the wheel sideways with. */
+        last_impact = cs.impact_count;
+        if (cs.impact_strength > 0.0f) {
+            double len = sqrt((double)cs.impact_dir[0] * cs.impact_dir[0] + (double)cs.impact_dir[1] * cs.impact_dir[1]
+                              + (double)cs.impact_dir[2] * cs.impact_dir[2]);
+            double x = len > 0.01 ? (double)cs.impact_dir[0] / len : 0.0;
+            double k = (double)cs.impact_strength / 20000.0;
+
+            k = k > 1.0 ? 1.0 : pow(k, 0.6);
+            *kick = k * (0.25 + 0.75 * fabs(x));
+            *kick_side = x < 0.0 ? -1.0 : 1.0;          /* the car's x: right; the direction points into the car */
+        }
+    }
     if (cs.airborne)
         g = air;
     a = (double)cs.slip_angle * 57.29578;
