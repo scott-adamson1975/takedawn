@@ -42,6 +42,11 @@ typedef struct bo3_carstate {
     uint32_t impact_count;
     float impact_strength;
     float impact_dir[3];
+    /* Added for the wheel: the angle in the horizontal plane between where the car points and where it travels (radians,
+     * 0 when going straight or too slow to tell; about pi in reverse), and whether the car is in the air (its vertical
+     * acceleration is near free fall: a jump or a crest). */
+    float slip_angle;
+    int airborne;
 } bo3_carstate;
 
 /* A consumer wants the snapshot. Before drive_log_start. */
