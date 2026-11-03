@@ -106,6 +106,8 @@ void bo3_carstate_start(uint32_t (*flips)(void))
         recomp_patch_on_mark("sb_impact", cs_impact_mark);
 }
 
+static float s_prev_pos[3], s_prev_time = -1.0f;
+
 void bo3_carstate_sample(void)
 {
     const uint32_t car = CS_CAR1;
@@ -149,6 +151,20 @@ void bo3_carstate_sample(void)
     n.accel_ok = o.accel_ok;
     memcpy(n.spin, o.spin, sizeof n.spin);
     memcpy(n.pos, r.pos, sizeof n.pos);
+    n.airborne = o.accel_ok && o.accel_up < -5.0f;
+    {
+        /* The slip angle: the car's forward (the matrix's z row, x and z) against the horizontal travel since the last sample. */
+        float dt = r.time - s_prev_time, vx = r.pos[0] - s_prev_pos[0], vz = r.pos[2] - s_prev_pos[2];
+        float fl = sqrtf(r.fwd[0] * r.fwd[0] + r.fwd[1] * r.fwd[1]), vl = sqrtf(vx * vx + vz * vz);
+
+        if (s_prev_time >= 0.0f && dt > 0.001f && dt < 0.25f && fl > 0.1f && vl / dt > 6.0f) {
+            float c = (vx * r.fwd[0] + vz * r.fwd[1]) / (vl * fl);
+
+            n.slip_angle = acosf(c > 1.0f ? 1.0f : c < -1.0f ? -1.0f : c);
+        }
+        s_prev_time = r.time;
+        memcpy(s_prev_pos, r.pos, sizeof s_prev_pos);
+    }
     for (k = 0; k < 3 && CS_M32(CS_PADS + k * 0x20) != 2; k++)
         ;
     st = (const uint8_t *)((uintptr_t)g_xbox_mem_offset + CS_PADS + k * 0x20 + 8);
