@@ -52,7 +52,7 @@ developing are plain `.cmd` files in `bin/` (not in the repository); the setting
 | `RECOMP_GFX_HDR=0` | the headset path copies the 8-bit picture raw |
 | `RECOMP_RENDER_SCALE=6` | the picture drawn for each eye is half of a frame this size |
 | `RECOMP_GFX_ANISO=16`, `RECOMP_GFX_AA=smaa` | filtering and anti-aliasing (the headset gets the post-processed frame) |
-| `BO3_SEATCAM_NEAR=0.25` | the near plane; smaller shows more of the car, larger removes z-fighting in the distance |
+| `BO3_SEATCAM_NEAR=0.12` | the near plane; smaller shows more of the car (0.25 cut off the interior), larger removes z-fighting in the distance |
 | `BO3_SEATCAM_FILE=%APPDATA%\Takedawn\seatcam.txt` | the per-car seat points |
 
 Recentre the view with Tab (keyboard) or the pad's right stick pressed in; hold it for about 1.5 seconds to store where
