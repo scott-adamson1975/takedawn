@@ -94,7 +94,7 @@ static int s_np_dirty;                  /* the seat point was nudged and not yet
 static unsigned s_np_idle;
 static float s_vr_lean[3];              /* the same in seat terms: right, up, ahead (metres) */
 static int s_boost_fx = 1;               /* BO3_VR_BOOSTFX=0: the boost's field of view widening is not shown */
-static int s_hide_driver = 1;           /* BO3_VR_DRIVER=0 keeps the driver */
+static int s_hide_driver = 0;           /* BO3_VR_DRIVER=1 drops the triangles in the driver's box: off by default, it did not remove the driver and cut holes in the interior */
 static int s_seat_slot = -1;            /* the seat slot the camera is at now (0 seat, 1 bonnet), -1 in a chase view */
 static float s_vr_off[3];               /* the head's move from the recentre, along the world axes */
 static float s_vw_keep[4], *s_vw_at;    /* the title's view window, put back at the flip */
@@ -251,8 +251,8 @@ void bo3_seatcam_car_draw(int begin)
 
     if (off < 0)
         off = getenv("BO3_VR_CULL") && *getenv("BO3_VR_CULL") == '0';
-    if (getenv("BO3_VR_DRIVER") && *getenv("BO3_VR_DRIVER") == '0')
-        s_hide_driver = 0;
+    if (getenv("BO3_VR_DRIVER") && *getenv("BO3_VR_DRIVER") == '1')
+        s_hide_driver = 1;
     if (getenv("BO3_VR_BOOSTFX") && *getenv("BO3_VR_BOOSTFX") == '0')
         s_boost_fx = 0;
     if (off || !s_stereo_on || g_esi != SC_CAR1)
