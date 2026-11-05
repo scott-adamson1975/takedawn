@@ -112,6 +112,21 @@ static void tab_load(void);
  * seat is drawn. Where it lives is not documented: the RwCamera (view + 0x58) is searched, once, for the pair
  * 0.5 then 10000.0 (the near and far planes sit side by side in a RwCamera), and what was found is logged. */
 static float s_near = 0.1f;
+static int s_ipd_cli;                   /* --stereo=<ipd> was given: the settings' eye separation does not override it */
+
+/* A VR option: its RECOMP_VR_* variable (the settings' VR page sets it) or the older BO3_ one. */
+static const char *venv(const char *a, const char *b)
+{
+    const char *v = getenv(a);
+
+    return v && *v ? v : getenv(b);
+}
+static int venv_is(const char *a, const char *b, char c)   /* the first character is c */
+{
+    const char *v = venv(a, b);
+
+    return v && *v == c;
+}
 static int s_near_off = -2;             /* the float index of the near plane; -2 not looked for, -1 not found */
 static uint32_t s_near_va;
 static float s_near_orig;
@@ -218,7 +233,7 @@ static void stereo_begin(uint32_t rc)
     if (!s_rflag_set) {                  /* bloom and motion blur off for the picture */
         s_rflag_keep[0] = fl[12];
         s_rflag_keep[1] = fl[14];
-        if (!getenv("BO3_VR_KEEP_FX"))       /* BO3_VR_KEEP_FX=1: bloom and motion blur stay on (the picture may be brighter) */
+        if (!(venv("RECOMP_VR_KEEP_FX", "BO3_VR_KEEP_FX") && *venv("RECOMP_VR_KEEP_FX", "BO3_VR_KEEP_FX") != '0'))   /* RECOMP_VR_KEEP_FX=1: bloom and motion blur stay on (the picture may be brighter) */
             fl[12] = fl[14] = 0;
         s_rflag_set = 1;
     }
@@ -251,9 +266,9 @@ void bo3_seatcam_car_draw(int begin)
 
     if (off < 0)
         off = getenv("BO3_VR_CULL") && *getenv("BO3_VR_CULL") == '0';
-    if (getenv("BO3_VR_DRIVER") && *getenv("BO3_VR_DRIVER") == '1')
+    if (venv_is("RECOMP_VR_HIDE_DRIVER", "BO3_VR_DRIVER", '1'))
         s_hide_driver = 1;
-    if (getenv("BO3_VR_BOOSTFX") && *getenv("BO3_VR_BOOSTFX") == '0')
+    if (venv_is("RECOMP_VR_BOOSTFX", "BO3_VR_BOOSTFX", '0'))
         s_boost_fx = 0;
     if (off || !s_stereo_on || g_esi != SC_CAR1)
         return;
@@ -381,6 +396,7 @@ void bo3_seatcam_args(int argc, char **argv)
         } else if (!strncmp(argv[i], "--stereo", 8) && (argv[i][8] == 0 || argv[i][8] == '=')) {
             s_cli_on = 1;
             s_ipd = argv[i][8] == '=' ? (float)atof(argv[i] + 9) : 0.064f;
+            s_ipd_cli = argv[i][8] == '=';
         } else if (!strncmp(argv[i], "--bonnet=", 9)) {
             s_cli_on = 1;
             cli_point(argv[i] + 9, 1);
@@ -421,14 +437,22 @@ void bo3_seatcam_start(void)
     {
         const char *st = getenv("BO3_SEATCAM_STEREO");
 
+        const char *mm = getenv("RECOMP_VR_IPD");      /* the settings' VR page: millimetres; not over a --stereo=<ipd> */
+
         if (st && *st && s_ipd == 0.0f)
             s_ipd = (float)atof(st) > 0.0f ? (float)atof(st) : 0.064f;
+        if (mm && *mm && s_ipd > 0.0f && !s_ipd_cli && atof(mm) >= 40.0 && atof(mm) <= 90.0)
+            s_ipd = (float)atof(mm) / 1000.0f;
         if (s_ipd > 0.0f)
             slog("[SEATCAM] stereo: the eyes %.3f m apart, side by side in one picture (the renderer draws each eye)\n", s_ipd);
     }
     {
         const char *nn = getenv("BO3_SEATCAM_NEAR");
 
+        const char *nm = getenv("RECOMP_VR_NEAR");     /* the settings' VR page: millimetres; BO3_SEATCAM_NEAR (metres) wins */
+
+        if (nm && *nm && atof(nm) > 0.0)
+            s_near = (float)atof(nm) / 1000.0f;
         if (nn && *nn)
             s_near = (float)atof(nn);
     }
@@ -969,7 +993,7 @@ void bo3_seatcam_apply(void)
     s_cam.va = cp;
     s_cam.applied = 1;
     near_apply();
-    if (s_vr_pose.id && !(getenv("BO3_VR_FOV") && *getenv("BO3_VR_FOV") == '0')) {
+    if (s_vr_pose.id && !venv_is("RECOMP_VR_FOV", "BO3_VR_FOV", '0')) {
         /* The headset's field of view. The title builds the view window every frame (sub_001C8A60) from the camera's field
          * of view (+0x10, 90) and two numbers in the view: x = tan(fov / 2) * view[0x70] and y = x / view[0x74] (1.2 and 16/9:
          * the widescreen window 1.2 x 0.675), then the view matrix from it. So it is those two numbers that are set, not the
