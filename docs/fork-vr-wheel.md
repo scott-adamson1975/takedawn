@@ -59,3 +59,13 @@ Recentre the view with Tab (keyboard) or the pad's right stick pressed in; hold 
 your head is as the car's seat. Other settings (`RECOMP_VR_SWAP`, `RECOMP_STEREO_HUD_SCALE`, `RECOMP_STEREO_HUD_ROUND`,
 `RECOMP_STEREO_HUD_BOTTOM`, `BO3_VR_CULL`, `RECOMP_STEREO_CAR_GLASS`) are described where they are read, in
 `src/game/seatcam.c`, `oxr.c` and `nv2a_pb_vulkan.c`.
+
+## The Wheel page in the settings
+
+TAKEDAWN SETTINGS (F1, or Back and Start) has a Wheel page: the wheel's rotation and game lock, steering sensitivity,
+linearity and deadzones, each pedal's sensitivity and linearity, and the force feedback (spring strength, how it follows
+the speed, the rest level, off outside races, off in the air and light in a drift, rumble, engine vibration, hit weight).
+The values are the `RECOMP_WHEEL_*` variables with keys `wheel.*` in `settings.toml`; a variable you set in a launcher
+still wins and shows the row locked. They are read when the game starts, so a change applies after a restart. Binding
+the axes and buttons is still done with `RECOMP_WHEEL_STEER`, `_THROTTLE`, `_BRAKE`, `_BTN_*` and `_HAT` (the launchers
+`run-wheel.cmd` and `run-vr-wheel.cmd` have them); mapping them from the page is the next piece.
