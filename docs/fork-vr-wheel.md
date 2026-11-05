@@ -60,12 +60,30 @@ your head is as the car's seat. Other settings (`RECOMP_VR_SWAP`, `RECOMP_STEREO
 `RECOMP_STEREO_HUD_BOTTOM`, `BO3_VR_CULL`, `RECOMP_STEREO_CAR_GLASS`) are described where they are read, in
 `src/game/seatcam.c`, `oxr.c` and `nv2a_pb_vulkan.c`.
 
-## The Wheel page in the settings
+## The Wheel pages in the settings
 
-TAKEDAWN SETTINGS (F1, or Back and Start) has a Wheel page: the wheel's rotation and game lock, steering sensitivity,
-linearity and deadzones, each pedal's sensitivity and linearity, and the force feedback (spring strength, how it follows
-the speed, the rest level, off outside races, off in the air and light in a drift, rumble, engine vibration, hit weight).
-The values are the `RECOMP_WHEEL_*` variables with keys `wheel.*` in `settings.toml`; a variable you set in a launcher
-still wins and shows the row locked. They are read when the game starts, so a change applies after a restart. Binding
-the axes and buttons is still done with `RECOMP_WHEEL_STEER`, `_THROTTLE`, `_BRAKE`, `_BTN_*` and `_HAT` (the launchers
-`run-wheel.cmd` and `run-vr-wheel.cmd` have them); mapping them from the page is the next piece.
+TAKEDAWN SETTINGS (F1, or Back and Start) has two wheel pages.
+
+**Wheel**: first the bindings, then the settings. A binding row (Steering axis, Throttle pedal, Brake pedal, D-pad, and the
+buttons for A, B, Start, X, Y and the recentre) is set by pressing it (Enter, or A on a pad) and then using the control: turn
+the wheel, press the pedal, push the D-pad, press the button. It waits ten seconds; Esc or B cancels, Backspace or Y clears the
+binding. A pedal that rests high is bound as inverted by itself. After a binding is made the page asks for a restart. Below
+them: the wheel's rotation and game lock, steering sensitivity, linearity and deadzones, each pedal's sensitivity and
+linearity, and the force feedback (spring strength, how it follows the speed, the rest level, off outside races, off in the air
+and light in a drift, rumble, engine vibration, hit weight).
+
+**Wheel test**: every joystick that is there (a game pad is left out), its axes as bars, the buttons down and the hat, as you
+use them; and under them what the game is given from the wheel after the lock, sensitivity and linearity (steering, throttle,
+brake), so the curves can be judged by eye.
+
+Everything is the `RECOMP_WHEEL_*` variables, kept as the keys `wheel.*` (`wheel.bind_steer` and so on for the bindings) in
+`settings.toml`; a variable you set in a launcher still wins and shows its row locked (`bin\run-wheel-settings.cmd` sets none,
+`bin\run-wheel-settings-bound.cmd` sets only the bindings). They are read when the game starts, so a change applies after a
+restart.
+
+Where the code is, kept apart from the shared files so that following the upstream stays easy (the shared files carry one
+`#include` or a few one-line hooks for it): in the toolkit's `src/overlay/`, `xbox_settings_wheel_ids.inc`,
+`xbox_settings_wheel_set.inc`, `xbox_settings_wheel_text.inc` (the settings), `overlay_wheel_meta.inc` (their labels and hints),
+`overlay_wheel.h`, `overlay_wheel.inc` and `overlay_wheel_row.inc` (the two pages); in `src/input/`, `wheel_probe.h` and
+`wheel_probe_sdl.c` (the joysticks and the capture, which the overlay reaches through a table of functions so it need not link
+the SDL glue).
