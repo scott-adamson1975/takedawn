@@ -6,7 +6,7 @@
  *
  * Settings: the SimHub page of the settings overlay (settings.toml: simhub.*), or the variables of a launcher, which win:
  *   RECOMP_SIMHUB=1            on (nothing runs without it)
- *   RECOMP_SIMHUB_PORT=5300    the UDP port; RECOMP_SIMHUB_HOST=127.0.0.1, the IPv4 address (simhub.host in settings.toml)
+ *   RECOMP_SIMHUB_PORT=8000    the UDP port; RECOMP_SIMHUB_HOST=127.0.0.1, the IPv4 address (simhub.host in settings.toml)
  *   RECOMP_SIMHUB_RPM=0        send rpm 0 and gear 1 instead of the made-up ones below
  *   RECOMP_SIMHUB_GRAVITY=1    adds 9.81 to the vertical acceleration (if SimHub expects gravity in it)
  *   RECOMP_SIMHUB_FLIP_PITCH / _FLIP_ROLL / _FLIP_YAW=1   turn that angle's sign round, if SimHub shows it backwards
@@ -247,7 +247,7 @@ void bo3_simhub_start(void)
         strncpy(host, h, sizeof host - 1);
         host[sizeof host - 1] = 0;
     }
-    port = recomp_env_int(RENV_SIMHUB_PORT, 5300);
+    port = recomp_env_int(RENV_SIMHUB_PORT, 8000);
     if (port <= 0 || port > 65535) {
         fprintf(stderr, "[SIMHUB] RECOMP_SIMHUB_PORT=%ld: not a port, SimHub telemetry stays off\n", port);
         return;

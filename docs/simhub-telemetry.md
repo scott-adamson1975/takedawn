@@ -13,7 +13,7 @@ Open the settings (F1, or Back and Start on a pad) and go to the **SimHub** tab.
 | Row (settings.toml key) | Variable | Meaning |
 |---|---|---|
 | Send to SimHub (`simhub.enable`) | `RECOMP_SIMHUB=1` | On. Off sends nothing and runs nothing. |
-| UDP port (`simhub.port`) | `RECOMP_SIMHUB_PORT` | The port the packets go to (default 5300); use the one SimHub listens on for Forza (its game settings show it). |
+| UDP port (`simhub.port`) | `RECOMP_SIMHUB_PORT` | The port the packets go to (default 8000, the port Forza Motorsport 7 sends its Data Out to). |
 | (`simhub.host`, settings.toml only) | `RECOMP_SIMHUB_HOST` | The IPv4 address to send to; empty is this computer (127.0.0.1). Set it to send to another PC. Not on the page: there is no text entry there. |
 | Made-up rpm and gear (`simhub.made_up_rpm`) | `RECOMP_SIMHUB_RPM=0` turns it off | See below. |
 | Gravity in heave (`simhub.gravity`) | `RECOMP_SIMHUB_GRAVITY=1` | Adds 9.81 to the vertical acceleration, if SimHub expects gravity in it (a parked car should read no heave, not a fall). |
