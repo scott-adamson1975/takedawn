@@ -32,7 +32,7 @@ From the shared car snapshot (`src/game/carstate.c`, the same one the wheel's fo
 
 ## Unverified
 
-Written from the documented packet layout and a check of the offsets (a 311-byte packet with each field where the format puts it), not yet run against SimHub: the signs of the angles and accelerations (they follow the snapshot's own conventions: check pitch and roll in SimHub's motion preview, braking should pitch the nose down and a right turn roll right, and use the flip rows if one is backwards), the wheel order of the spin (assumed FL, FR, RL, RR), whether SimHub expects gravity in the heave, and whether SimHub's Forza profile accepts the fixed car identity. Report what a dashboard or shaker shows against the car.
+Written from the documented packet layout and a check of the offsets (a 311-byte packet with each field where the format puts it), not yet run against SimHub: the signs of the angles and accelerations (they follow the snapshot's own conventions: check pitch and roll in SimHub's motion preview, braking should pitch the nose down and a right turn lean the platform left, left side down, whether from the roll or from the sideways acceleration, and use the flip rows if one is backwards; the roll angle itself is only the car's own tilt, which is small in corners), the wheel order of the spin (assumed FL, FR, RL, RR), whether SimHub expects gravity in the heave, and whether SimHub's Forza profile accepts the fixed car identity. Report what a dashboard or shaker shows against the car.
 
 ## Where the code is
 
