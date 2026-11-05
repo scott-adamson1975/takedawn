@@ -9,7 +9,7 @@
  *   RECOMP_SIMHUB_PORT=8000    the UDP port; RECOMP_SIMHUB_HOST=127.0.0.1, the IPv4 address (simhub.host in settings.toml)
  *   RECOMP_SIMHUB_RPM=0        send rpm 0 and gear 1 instead of the made-up ones below
  *   RECOMP_SIMHUB_GRAVITY=1    adds 9.81 to the vertical acceleration (if SimHub expects gravity in it)
- *   RECOMP_SIMHUB_FLIP_PITCH / _FLIP_ROLL / _FLIP_YAW=1   turn that angle's sign round, if SimHub shows it backwards
+ *   RECOMP_SIMHUB_FLIP_PITCH / _FLIP_ROLL / _FLIP_YAW=1   turn that angle's sign round, if SimHub shows it backwards (pitch is already sent turned round: it showed backwards in SimHub with the car's own sign)
  *   RECOMP_SIMHUB_LOG=1        log what is sent
  *
  * What is real and what is not. From the snapshot: speed, the accelerations, the turn rates, wheel spin, wheel slip, the
@@ -54,7 +54,7 @@ typedef int sock_t;
 static struct sockaddr_in s_to;
 static sock_t s_sock = SOCK_BAD;
 static int s_fake_rpm = 1, s_log;
-static double s_flip_p = 1.0, s_flip_r = 1.0, s_flip_y = 1.0;   /* BO3_SIMHUB_FLIP: p, r, y turn that angle's sign round */
+static double s_flip_p = -1.0, s_flip_r = 1.0, s_flip_y = 1.0;   /* BO3_SIMHUB_FLIP: p, r, y turn that angle's sign round */
 static double s_gravity;                                       /* BO3_SIMHUB_GRAVITY=1: 9.81 added to the vertical acceleration */
 
 /* Little-endian writers into the packet being built. */
@@ -119,7 +119,7 @@ static void build(uint8_t *buf, const bo3_carstate *cs, double dist, double rumb
     put_f(vx);                                              /* velocity x (right), */
     put_f(cs ? cs->vel_up : 0.0);                           /* y (up), */
     put_f(vz);                                              /* z (forward), in the car's frame */
-    put_f(cs ? cs->pitch_rate : 0.0);                       /* angular velocity x (pitch), */
+    put_f(cs ? cs->pitch_rate * s_flip_p : 0.0);                       /* angular velocity x (pitch), */
     put_f(cs ? cs->yaw_rate : 0.0);                         /* y (yaw), */
     put_f(cs ? cs->roll_rate : 0.0);                        /* z (roll) */
     put_f(cs ? cs->yaw * s_flip_y : 0.0);                   /* Yaw, Pitch, Roll: the car's orientation, radians */
@@ -254,7 +254,7 @@ void bo3_simhub_start(void)
     }
     s_fake_rpm = !env_off(RENV_SIMHUB_RPM);
     s_log = recomp_env_on(RENV_SIMHUB_LOG);
-    s_flip_p = recomp_env_on(RENV_SIMHUB_FLIP_PITCH) ? -1.0 : 1.0;
+    s_flip_p = recomp_env_on(RENV_SIMHUB_FLIP_PITCH) ? 1.0 : -1.0;
     s_flip_r = recomp_env_on(RENV_SIMHUB_FLIP_ROLL) ? -1.0 : 1.0;
     s_flip_y = recomp_env_on(RENV_SIMHUB_FLIP_YAW) ? -1.0 : 1.0;
     s_gravity = recomp_env_on(RENV_SIMHUB_GRAVITY) ? 9.81 : 0.0;

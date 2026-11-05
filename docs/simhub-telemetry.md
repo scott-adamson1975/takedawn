@@ -17,7 +17,7 @@ Open the settings (F1, or Back and Start on a pad) and go to the **SimHub** tab.
 | (`simhub.host`, settings.toml only) | `RECOMP_SIMHUB_HOST` | The IPv4 address to send to; empty is this computer (127.0.0.1). Set it to send to another PC. Not on the page: there is no text entry there. |
 | Made-up rpm and gear (`simhub.made_up_rpm`) | `RECOMP_SIMHUB_RPM=0` turns it off | See below. |
 | Gravity in heave (`simhub.gravity`) | `RECOMP_SIMHUB_GRAVITY=1` | Adds 9.81 to the vertical acceleration, if SimHub expects gravity in it (a parked car should read no heave, not a fall). |
-| Flip pitch / roll / yaw (`simhub.flip_pitch`, `_roll`, `_yaw`) | `RECOMP_SIMHUB_FLIP_PITCH`, `_ROLL`, `_YAW=1` | Turn that angle's sign round, if SimHub shows it backwards. |
+| Flip pitch / roll / yaw (`simhub.flip_pitch`, `_roll`, `_yaw`) | `RECOMP_SIMHUB_FLIP_PITCH`, `_ROLL`, `_YAW=1` | Turn that angle's sign round, if SimHub shows it backwards. Pitch (the angle and its rate) is already sent reversed from the car's own sign, because it showed backwards in SimHub; turning it on sends the car's own sign. |
 | | `RECOMP_SIMHUB_LOG=1` | Log a line a second while sending (`[SIMHUB]` in the log). |
 
 Packets go out only while a race runs (the snapshot is fresh); one "race off" packet when it stops, then nothing.
