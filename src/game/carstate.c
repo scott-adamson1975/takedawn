@@ -183,6 +183,16 @@ void bo3_carstate_sample(void)
         n.land_tilt = s_land_tilt;
     }
     {
+        /* The orientation from the matrix: its rows are the car's left (+0x00), up (+0x10) and forward (+0x20) axes. */
+        float left_y = CS_MF(car + CS_MATRIX + 0x04u), fwd_y = CS_MF(car + CS_MATRIX + 0x24u);
+
+        left_y = left_y > 1.0f ? 1.0f : left_y < -1.0f ? -1.0f : left_y;
+        fwd_y = fwd_y > 1.0f ? 1.0f : fwd_y < -1.0f ? -1.0f : fwd_y;
+        n.pitch = asinf(fwd_y);                            /* the nose's rise */
+        n.roll = asinf(left_y);                            /* the left side's rise: right side down is positive */
+        n.yaw = atan2f(r.fwd[0], r.fwd[1]);
+    }
+    {
         /* The slip angle: the car's forward (the matrix's z row, x and z) against the horizontal travel since the last sample. */
         float dt = r.time - s_prev_time, vx = r.pos[0] - s_prev_pos[0], vz = r.pos[2] - s_prev_pos[2];
         float fl = sqrtf(r.fwd[0] * r.fwd[0] + r.fwd[1] * r.fwd[1]), vl = sqrtf(vx * vx + vz * vz);

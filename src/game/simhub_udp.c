@@ -5,6 +5,8 @@
  * "Forza Motorsport 7" in SimHub the dashboards, LEDs, bass shakers and motion rigs work without a plugin.
  *
  * Settings (environment):
+ *   BO3_SIMHUB_FLIP=pry                     turns the sign of the pitch, roll or yaw angles round (letters p, r, y), if SimHub shows one backwards
+ *   BO3_SIMHUB_GRAVITY=1                    adds 9.81 to the vertical acceleration (if SimHub expects gravity in it)
  *   BO3_SIMHUB_UDP=<port> | <host>:<port>   on, and where to send (a port alone means this computer, 127.0.0.1)
  *   BO3_SIMHUB_RPM=0                        send rpm 0 and gear 1 instead of the made-up ones below
  *   BO3_SIMHUB_LOG=1                        log what is sent
@@ -50,6 +52,8 @@ typedef int sock_t;
 static struct sockaddr_in s_to;
 static sock_t s_sock = SOCK_BAD;
 static int s_fake_rpm = 1, s_log;
+static double s_flip_p = 1.0, s_flip_r = 1.0, s_flip_y = 1.0;   /* BO3_SIMHUB_FLIP: p, r, y turn that angle's sign round */
+static double s_gravity;                                       /* BO3_SIMHUB_GRAVITY=1: 9.81 added to the vertical acceleration */
 
 /* Little-endian writers into the packet being built. */
 static uint8_t *s_p;
@@ -108,7 +112,7 @@ static void build(uint8_t *buf, const bo3_carstate *cs, double dist, double rumb
     put_f(1000.0);                                          /* EngineIdleRpm */
     put_f(rpm);                                             /* CurrentEngineRpm */
     put_f(cs ? cs->sway : 0.0);                             /* acceleration x: to the car's right */
-    put_f(cs ? cs->accel_up : 0.0);                         /* y: up */
+    put_f(cs ? cs->accel_up + s_gravity : 0.0);             /* y: up */
     put_f(cs ? cs->surge : 0.0);                            /* z: forward */
     put_f(vx);                                              /* velocity x (right), */
     put_f(cs ? cs->vel_up : 0.0);                           /* y (up), */
@@ -116,7 +120,9 @@ static void build(uint8_t *buf, const bo3_carstate *cs, double dist, double rumb
     put_f(cs ? cs->pitch_rate : 0.0);                       /* angular velocity x (pitch), */
     put_f(cs ? cs->yaw_rate : 0.0);                         /* y (yaw), */
     put_f(cs ? cs->roll_rate : 0.0);                        /* z (roll) */
-    put_f(0.0); put_f(0.0); put_f(0.0);                     /* Yaw, Pitch, Roll angles: not in the snapshot */
+    put_f(cs ? cs->yaw * s_flip_y : 0.0);                   /* Yaw, Pitch, Roll: the car's orientation, radians */
+    put_f(cs ? cs->pitch * s_flip_p : 0.0);
+    put_f(cs ? cs->roll * s_flip_r : 0.0);
     for (i = 0; i < 4; i++) put_f(0.5);                     /* NormalizedSuspensionTravel: mid travel */
     for (i = 0; i < 4; i++) put_f(cs ? cs->slip : 0.0);     /* TireSlipRatio */
     for (i = 0; i < 4; i++) put_f(cs ? cs->spin[i] : 0.0);  /* WheelRotationSpeed, rad/s */
@@ -245,6 +251,16 @@ void bo3_simhub_start(void)
     }
     s_fake_rpm = !(getenv("BO3_SIMHUB_RPM") && getenv("BO3_SIMHUB_RPM")[0] == '0');
     s_log = getenv("BO3_SIMHUB_LOG") && getenv("BO3_SIMHUB_LOG")[0] == '1';
+    {
+        const char *f = getenv("BO3_SIMHUB_FLIP");
+
+        if (f) {
+            s_flip_p = strchr(f, 'p') ? -1.0 : 1.0;
+            s_flip_r = strchr(f, 'r') ? -1.0 : 1.0;
+            s_flip_y = strchr(f, 'y') ? -1.0 : 1.0;
+        }
+        s_gravity = getenv("BO3_SIMHUB_GRAVITY") && getenv("BO3_SIMHUB_GRAVITY")[0] == '1' ? 9.81 : 0.0;
+    }
 #ifdef _WIN32
     {
         WSADATA w;
