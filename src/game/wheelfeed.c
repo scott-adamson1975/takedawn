@@ -45,9 +45,10 @@ static double grip_feed(double *kick_side, double *kick, double *jolt)
     if (air < 0.0) {
         const char *e = getenv("BO3_WHEEL_AIR"), *d = getenv("BO3_WHEEL_DRIFT");
 
-        air = e ? atof(e) / 100.0 : 0.0;
+        /* RECOMP_WHEEL_FFB_AIR and RECOMP_WHEEL_FFB_DRIFT (the Wheel page's rows) are read first; the older BO3_ names still work. */
+        air = e ? atof(e) / 100.0 : recomp_env_double(RENV_INPUT_WHEEL_FFB_AIR, 0.0) / 100.0;
         land_sign = getenv("BO3_WHEEL_LAND_FLIP") && *getenv("BO3_WHEEL_LAND_FLIP") == '1' ? -1.0 : 1.0;
-        drift = d ? atof(d) / 100.0 : 0.15;
+        drift = d ? atof(d) / 100.0 : recomp_env_double(RENV_INPUT_WHEEL_FFB_DRIFT, 15.0) / 100.0;
         air = air < 0.0 ? 0.0 : air > 1.0 ? 1.0 : air;
         drift = drift < 0.0 ? 0.0 : drift > 1.0 ? 1.0 : drift;
     }
