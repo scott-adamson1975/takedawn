@@ -4,12 +4,13 @@
  * has no generic UDP input for a game of its own, but it reads this format natively, so with the game set to
  * "Forza Motorsport 7" in SimHub the dashboards, LEDs, bass shakers and motion rigs work without a plugin.
  *
- * Settings (environment):
- *   BO3_SIMHUB_FLIP=pry                     turns the sign of the pitch, roll or yaw angles round (letters p, r, y), if SimHub shows one backwards
- *   BO3_SIMHUB_GRAVITY=1                    adds 9.81 to the vertical acceleration (if SimHub expects gravity in it)
- *   BO3_SIMHUB_UDP=<port> | <host>:<port>   on, and where to send (a port alone means this computer, 127.0.0.1)
- *   BO3_SIMHUB_RPM=0                        send rpm 0 and gear 1 instead of the made-up ones below
- *   BO3_SIMHUB_LOG=1                        log what is sent
+ * Settings: the SimHub page of the settings overlay (settings.toml: simhub.*), or the variables of a launcher, which win:
+ *   RECOMP_SIMHUB=1            on (nothing runs without it)
+ *   RECOMP_SIMHUB_PORT=5300    the UDP port; RECOMP_SIMHUB_HOST=127.0.0.1, the IPv4 address (simhub.host in settings.toml)
+ *   RECOMP_SIMHUB_RPM=0        send rpm 0 and gear 1 instead of the made-up ones below
+ *   RECOMP_SIMHUB_GRAVITY=1    adds 9.81 to the vertical acceleration (if SimHub expects gravity in it)
+ *   RECOMP_SIMHUB_FLIP_PITCH / _FLIP_ROLL / _FLIP_YAW=1   turn that angle's sign round, if SimHub shows it backwards
+ *   RECOMP_SIMHUB_LOG=1        log what is sent
  *
  * What is real and what is not. From the snapshot: speed, the accelerations, the turn rates, wheel spin, wheel slip, the
  * pedals, steering, position and the impacts. Not in the game's car (Burnout 3 has no gearbox): rpm and gear. They are
@@ -42,6 +43,7 @@ typedef int sock_t;
 #define SOCK_BAD (-1)
 #endif
 
+#include "platform/recomp_env.h"
 #include "carstate.h"
 #include "simhub.h"
 
@@ -224,43 +226,38 @@ static void *run(void *arg)
 #endif
 }
 
+/* "Off" only when the value is set and starts with 0: a key that is unset keeps the default (on) it is read for. */
+static int env_off(recomp_env_id id)
+{
+    const char *v = recomp_env(id);
+
+    return v && *v == '0';
+}
+
 void bo3_simhub_start(void)
 {
-    const char *e = getenv("BO3_SIMHUB_UDP");
     char host[128] = "127.0.0.1";
-    const char *colon;
-    int port;
+    const char *h;
+    long port;
 
-    if (!e || !*e)
+    if (!recomp_env_on(RENV_SIMHUB))
         return;
-    colon = strrchr(e, ':');
-    if (colon) {
-        size_t n = (size_t)(colon - e);
-
-        if (n >= sizeof host)
-            n = sizeof host - 1;
-        memcpy(host, e, n);
-        host[n] = 0;
-        port = atoi(colon + 1);
-    } else {
-        port = atoi(e);
+    h = recomp_env(RENV_SIMHUB_HOST);
+    if (h && *h) {
+        strncpy(host, h, sizeof host - 1);
+        host[sizeof host - 1] = 0;
     }
+    port = recomp_env_int(RENV_SIMHUB_PORT, 5300);
     if (port <= 0 || port > 65535) {
-        fprintf(stderr, "[SIMHUB] BO3_SIMHUB_UDP=%s: not a port, SimHub telemetry stays off\n", e);
+        fprintf(stderr, "[SIMHUB] RECOMP_SIMHUB_PORT=%ld: not a port, SimHub telemetry stays off\n", port);
         return;
     }
-    s_fake_rpm = !(getenv("BO3_SIMHUB_RPM") && getenv("BO3_SIMHUB_RPM")[0] == '0');
-    s_log = getenv("BO3_SIMHUB_LOG") && getenv("BO3_SIMHUB_LOG")[0] == '1';
-    {
-        const char *f = getenv("BO3_SIMHUB_FLIP");
-
-        if (f) {
-            s_flip_p = strchr(f, 'p') ? -1.0 : 1.0;
-            s_flip_r = strchr(f, 'r') ? -1.0 : 1.0;
-            s_flip_y = strchr(f, 'y') ? -1.0 : 1.0;
-        }
-        s_gravity = getenv("BO3_SIMHUB_GRAVITY") && getenv("BO3_SIMHUB_GRAVITY")[0] == '1' ? 9.81 : 0.0;
-    }
+    s_fake_rpm = !env_off(RENV_SIMHUB_RPM);
+    s_log = recomp_env_on(RENV_SIMHUB_LOG);
+    s_flip_p = recomp_env_on(RENV_SIMHUB_FLIP_PITCH) ? -1.0 : 1.0;
+    s_flip_r = recomp_env_on(RENV_SIMHUB_FLIP_ROLL) ? -1.0 : 1.0;
+    s_flip_y = recomp_env_on(RENV_SIMHUB_FLIP_YAW) ? -1.0 : 1.0;
+    s_gravity = recomp_env_on(RENV_SIMHUB_GRAVITY) ? 9.81 : 0.0;
 #ifdef _WIN32
     {
         WSADATA w;
@@ -275,7 +272,7 @@ void bo3_simhub_start(void)
     s_to.sin_family = AF_INET;
     s_to.sin_port = htons((unsigned short)port);
     if (inet_pton(AF_INET, host, &s_to.sin_addr) != 1) {
-        fprintf(stderr, "[SIMHUB] BO3_SIMHUB_UDP=%s: '%s' is not an IPv4 address, SimHub telemetry stays off\n", e, host);
+        fprintf(stderr, "[SIMHUB] '%s' is not an IPv4 address, SimHub telemetry stays off\n", host);
         return;
     }
     s_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -300,5 +297,5 @@ void bo3_simhub_start(void)
     }
 #endif
     fprintf(stderr, "[SIMHUB] sending Forza Motorsport 7 'car dash' packets (%d bytes, %d Hz) to %s:%d\n", PKT_SIZE, HZ,
-            host, port);
+            host, (int)port);
 }
