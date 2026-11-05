@@ -72,6 +72,7 @@ extern void xbox_InputPanicStop(int wait_ms);
 #include "region.h"                   /* BO3_VA: NTSC-U or PAL addresses */
 #include "controls.h"                 /* input.control_scheme (BO-106) */
 #include "carstate.h"                 /* the shared car snapshot (motion platform, force feedback) */
+#include "simhub.h"                   /* BO3_SIMHUB_UDP: the snapshot sent to SimHub (simhub_udp.c) */
 #include "install.h"                  /* the data root, --install, --version (BO-103) */
 #include "fatal.h"                    /* a start-up failure the player sees */
 #include "glyphs.h"                   /* the button prompts for the pad in use (BO-107) */
@@ -3664,6 +3665,7 @@ int main(int argc, char **argv)
     fx_at_start();
     bo3_seatcam_start();                /* BO3_SEATCAM: a VR test camera (seatcam.c) */
     bo3_wheel_feed_start();             /* the wheel spring's car feed: asks for the snapshot, so before drive_log_start */
+    bo3_simhub_start();                 /* BO3_SIMHUB_UDP (simhub_udp.c): asks for the snapshot too, so before drive_log_start */
     drive_log_start();
     pace_log_start();
     /* BO-106: input.control_scheme (controls.c). */

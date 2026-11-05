@@ -89,6 +89,11 @@ endif()
 # library; a build without that library gets the reader's one file. The
 # MODS page in the title's Settings menu (modsmenu.c) on every platform.
 target_sources(burnout3 PRIVATE modfs.c modmanifest.c modsmenu.c)
+# Telemetry to SimHub over UDP (simhub_udp.c); Winsock on Windows.
+target_sources(burnout3 PRIVATE simhub_udp.c)
+if(WIN32)
+    target_link_libraries(burnout3 PRIVATE ws2_32)
+endif()
 target_include_directories(burnout3 PRIVATE ${XBOXRECOMP_DIR}/src/enhance)
 if(NOT TARGET xbox_enhance)
     if(NOT EXISTS ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c)

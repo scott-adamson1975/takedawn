@@ -52,6 +52,9 @@ typedef struct bo3_carstate {
      * landed first) belong to the latest. */
     uint32_t land_count;
     float land_speed, land_tilt;
+    /* The car's orientation from its world matrix (radians): pitch positive nose up, roll positive right side down, yaw
+     * the heading, positive turning right (atan2 of the forward axis' x and z; it wraps at +-pi). For a motion platform. */
+    float pitch, roll, yaw;
 } bo3_carstate;
 
 /* A consumer wants the snapshot. Before drive_log_start. */
