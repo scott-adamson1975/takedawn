@@ -36,10 +36,6 @@ if(ANDROID)
         controls.c
         autopilot.c
         softbody.c
-        telemetry.c
-        wheelfeed.c
-        seatcam.c
-        carstate.c
         menuentry.c
         tutorial.c
         scoreboard.c
@@ -107,10 +103,6 @@ add_executable(burnout3
     controls.c
     autopilot.c
     softbody.c
-    telemetry.c
-    wheelfeed.c
-    seatcam.c
-    carstate.c
     menuentry.c
     tutorial.c
     scoreboard.c
@@ -141,11 +133,8 @@ endif()
 # line (mainquit.c) and the keyboard prompts' key caps drawn for the player's own
 # keys (keycap.c, used by glyphs.c) on every platform.
 target_sources(burnout3 PRIVATE modfs.c modmanifest.c modsmenu.c modtex.c modstab.c mainquit.c keycap.c xboxlive.c codeentry.c onlinedesc.c quickplay.c racewait.c vote.c onlinebrand.c onlinebrand_text.c headfont.c stay.c nodash.c)
-# Telemetry to SimHub over UDP (simhub_udp.c); Winsock on Windows.
-target_sources(burnout3 PRIVATE simhub_udp.c)
-if(WIN32)
-    target_link_libraries(burnout3 PRIVATE ws2_32)
-endif()
+# The fork's sources (VR seat camera, car snapshot, wheel feed, SimHub): src/game/ours.cmake.
+include(${CMAKE_CURRENT_SOURCE_DIR}/ours.cmake)
 target_include_directories(burnout3 PRIVATE ${XBOXRECOMP_DIR}/src/enhance)
 if(NOT TARGET xbox_enhance)
     if(NOT EXISTS ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c)
