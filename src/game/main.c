@@ -3597,6 +3597,15 @@ int main(int argc, char **argv)
      * arguments stay in its ANSI code page, as before. After the console is
      * attached: its code page is set with it. */
     s_utf8_args = recomp_win_utf8_args(&argc, &argv);
+    {
+        /* The headset starts below, before the settings are read: its graphics API (the VR page's vr.api) from the file now. */
+        char api[16];
+        int i;
+
+        for (i = 1; i < argc; i++)
+            if (!strcmp(argv[i], "--vr") && !getenv("RECOMP_VR_API") && xbox_SettingsPeek(BO3_USER_DIR, "vr.api", api, sizeof api))
+                _putenv_s("RECOMP_VR_API_SAVED", api);   /* not RECOMP_VR_API: that would lock the VR page's row */
+    }
     bo3_seatcam_args(argc, argv);                 /* --seatcam, --bonnet (seatcam.c) */
 #endif
     /* The package's programs, one for each disc, hand the whole line to
