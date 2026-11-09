@@ -100,17 +100,6 @@ static float s_vr_off[3];               /* the head's move from the recentre, al
 static float s_vw_keep[4], *s_vw_at;    /* the title's view window, put back at the flip */
 static float s_yaw, s_pitch;            /* the look now, radians: right and up positive */
 static int s_vr;                        /* --vr: a headset system was found (the toolkit's xbox_VrInit) */
-
-#ifdef _WIN32
-/* A numpad key: its number with NumLock on; with NumLock off the same key sends the arrows, Page Up/Down, Clear and Insert, which
- * count too in the headset (the dedicated arrows share them: the keyboard cannot tell them apart from here). */
-static int np_key(int num, int alt)
-{
-    if (GetAsyncKeyState(num) & 0x8000)
-        return 1;
-    return s_vr && !(GetKeyState(VK_NUMLOCK) & 1) && (GetAsyncKeyState(alt) & 0x8000) != 0;
-}
-#endif
 static float s_ipd;                     /* the eye separation, metres; 0 = no stereo (BO3_SEATCAM_STEREO, --stereo[=ipd]) */
 
 /* The per-car seat (below): declared here for the start-up code. */
@@ -701,12 +690,12 @@ static const float *seat_update(int front)
         float *c = s_cur[slot];
         int moved = 0;
 
-        if (np_key(VK_NUMPAD6, VK_RIGHT)) { c[0] += step; moved = 1; }   /* right */
-        if (np_key(VK_NUMPAD4, VK_LEFT)) { c[0] -= step; moved = 1; }   /* left */
-        if (np_key(VK_NUMPAD8, VK_UP)) { c[2] += step; moved = 1; }   /* ahead */
-        if (np_key(VK_NUMPAD2, VK_DOWN)) { c[2] -= step; moved = 1; }   /* back */
-        if (np_key(VK_NUMPAD9, VK_PRIOR)) { c[1] += step; moved = 1; }   /* up */
-        if (np_key(VK_NUMPAD3, VK_NEXT)) { c[1] -= step; moved = 1; }   /* down */
+        if (GetAsyncKeyState(VK_NUMPAD6) & 0x8000) { c[0] += step; moved = 1; }   /* right */
+        if (GetAsyncKeyState(VK_NUMPAD4) & 0x8000) { c[0] -= step; moved = 1; }   /* left */
+        if (GetAsyncKeyState(VK_NUMPAD8) & 0x8000) { c[2] += step; moved = 1; }   /* ahead */
+        if (GetAsyncKeyState(VK_NUMPAD2) & 0x8000) { c[2] -= step; moved = 1; }   /* back */
+        if (GetAsyncKeyState(VK_NUMPAD9) & 0x8000) { c[1] += step; moved = 1; }   /* up */
+        if (GetAsyncKeyState(VK_NUMPAD3) & 0x8000) { c[1] -= step; moved = 1; }   /* down */
         s_seat_slot = slot;
         if (moved) {
             static unsigned t;
@@ -722,7 +711,7 @@ static const float *seat_update(int front)
             s_np_dirty = 0;
             tab_save(s_curkey, slot);
         }
-        if (np_key(VK_NUMPAD5, VK_CLEAR)) {
+        if (GetAsyncKeyState(VK_NUMPAD5) & 0x8000) {
             if (!reset_down) {
                 int t = s_curkey ? tab_find(s_curkey, slot) : -1;
 
@@ -737,7 +726,7 @@ static const float *seat_update(int front)
         } else {
             reset_down = 0;
         }
-        if (np_key(VK_NUMPAD0, VK_INSERT)) {
+        if (GetAsyncKeyState(VK_NUMPAD0) & 0x8000) {
             if (!saved_down) {
                 saved_down = 1;
                 if (s_curkey)
