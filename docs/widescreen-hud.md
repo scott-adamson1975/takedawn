@@ -57,7 +57,7 @@ build, with Nahelam's PS2 symbol list as the guide to the names.
   (the rectangle's arithmetic with 640 for 610; 1.31 at 16:9 with the crop).
   The title itself shows the message cut by the right edge while it comes in
   and by the left while it goes (4:3: 6 frames, up to 48% of the text past
-  the edge); that is its slide, not a defect.
+  the edge); that is its slide.
 - The EA Trax pop-up is squeezed about the visible left edge in a frame a
   stage drew (beside the HUD), and about x = 320 in the front end, with the
   menu it sits on (`stage_frame`).
@@ -78,9 +78,16 @@ build, with Nahelam's PS2 symbol list as the guide to the names.
   across the frame that is content, the selected line's brackets
   (`sub_000FB900`), is left to the squeeze. The PS2 fix patches each element's
   width and x; here it is one rule by geometry.
-- The front end's 3D (the Crash Nav globe, the garage) is the title's own,
-  already drawn for 16:9, and is not touched.
-- Crash Nav's Select Location map (`display.crashnav_map`, Display page row
+- The front end's 3D: the garage is drawn by the one-player camera
+  (`sub_0002F380`), which has the title's 16:9, and is not touched. The
+  Crash Nav globe is drawn under the front end's 2D camera (owner
+  `0x4D6170` + `0x310`, made once by `sub_0002ECC0` with its constructor's
+  4:3 view window), so in 16:9 the title draws the 4:3 view a third wider
+  than it is; it follows `display.pictures` (below). That camera is not the
+  globe's alone: `sub_0003D9E0` with mode 0 begins every frame's 2D pass
+  through it, in races, loading screens and menus, so its window is not
+  changed.
+- Crash Nav's Select Location map (`display.crashnav_map`, Game page row
   "Crash Nav map", shown while Widescreen HUD is on; BO-222). The map is six
   tiles (callback `0x1C1A60`) on a frame of its own with the route line
   (`0x1C0790`), the crosshair (`0x1C1930`), the shields (`0xD77A0`) and their
@@ -96,10 +103,44 @@ build, with Nahelam's PS2 symbol list as the guide to the names.
   with the chosen place (the shield drawn twice). `native`: the squeeze
   alone, the map 4:3 with the menu. In both, what the title keeps past the
   screen's edges on this screen (the location list's NEW labels at column
-  740) stays there, out of the columns the squeeze opens. Live; nothing
+  740) stays there, out of the columns the squeeze opens. The zoom that
+  leads to the screen (globe to region, region to city) is drawn on four
+  pictures of the root frame (`0x1C1A60`, 640x416 from the top left) on
+  exactly the tiles' box, with the route object already there: a picture
+  with the tiles' drawn box takes the map's shape, so with `native` the
+  zoom is 4:3 too and does not jump to 4:3 as it lands (BO-314,
+  `tools/headless/crashnav_zoom_dump_scene.sh`). Live; nothing
   changes in 4:3 or with Widescreen HUD off. Headless check:
   Crash Nav > USA and Europe, each place in turn, at 16:9 (both options,
   as shown at 1920x1080 and on a 1280x800 panel) and 4:3.
+- `display.pictures` (`RECOMP_DISPLAY_PICTURES`, Game page row "4:3
+  pictures", only with Widescreen HUD on; BO-315): the front end's 4:3
+  full-screen pictures, which the decoration rule draws across the 16:9
+  picture: the loading screen's picture (`0x1C1A60`, 640x384), the films
+  behind the menus (`0x1C59A0`, 640x352: main menu, Junction Selection,
+  Crash Training) and Crash Nav's zoom and map. `blur` (default, the
+  my choice of 2026-10-30; an unset variable reads as blur) keeps them
+  4:3 with a blurred, darkened copy of the same picture across the screen
+  under them; `black` keeps them 4:3 over a black copy; `stretch` draws them
+  across the picture as before (a saved `stretch` stays). The fills are drawn by the picture's own callback (wrapped in
+  `src/game/recomp/recomp_manual.c`): 16 taps on an 18-column disc at
+  1/(k+1) opacity each, at 45% brightness, then the picture at 4:3. At
+  `blur` and `black` the Crash Nav map and its zoom are 4:3 whatever
+  `display.crashnav_map` says, and that row is hidden. The race and crash
+  results and the garage are 3D and keep their shape anyway. The Crash Nav
+  globe (BO-385, GitHub #124) is 3D too, but its camera keeps a 4:3 view
+  window (above): at `blur` and `black`, for the globe's draw only
+  (`sub_000F31E0`, wrapped in `recomp_manual.c`), the clip x of the
+  camera's matrices for that frame is divided by the picture's shape over
+  4:3 (4/3 at 16:9, the `globe_k` of `src/game/main.c`): column 0 of the
+  projection (`0x4D66B0`) and of the view-projection (`0x4D66F0`), and row
+  0 of the transposed copy the globe loads as vertex shader constants
+  (`0x4D6730`), put back after the draw. The globe then has the size, shape
+  and place it has in 4:3, beside the squeezed menu, and the sides show
+  more of it over the menu film's fill; at `stretch` it is the title's own.
+  It is read every frame, so a change shows at once. Headless check:
+  `tools/headless/globe_scene.sh` (globe, zoom, Select Location, loading
+  screen). Live; nothing changes in 4:3.
 - Latch: the rectangle sites sample the setting when a stage is set up; every
   other HUD site follows that sample. A change shows whole from the next race
   (or a Restart). The front-end sites follow the setting as it is. A
