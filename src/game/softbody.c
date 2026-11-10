@@ -59,6 +59,7 @@
 #include "recomp_types.h"
 #include "region.h"
 #include "seatcam.h"
+#include "carstate.h"
 
 extern RECOMP_TLS uint32_t g_eax, g_esi, g_ebp, g_esp;
 extern ptrdiff_t g_xbox_mem_offset;
@@ -2167,6 +2168,7 @@ static void wheel_bend(sb_car *c, uint32_t w, const float *hub)
 static void sb_draw(void)
 {
     uint32_t car = g_esi, bgv, flip;
+
     sb_car *c;
     int i;
 
@@ -2538,6 +2540,7 @@ static void sb_impact(void)
     int i, j, nsurf, hit = -1, have_pt = 0;
     sb_car *c;
 
+    bo3_carstate_impact(ebp);       /* the shared car snapshot's impact (a mark runs only its first handler) */
     if (!body || !dirp)
         return;
     c = car_find(body - 0x10);

@@ -150,6 +150,8 @@ if(NOT ANDROID)
     add_subdirectory(tests/modtex)
     # The MODS page in the title's Settings menu (src/game/modsmenu.c).
     add_subdirectory(tests/modsmenu)
+    # The shared car snapshot maths (src/game/carstate_math.h).
+    add_subdirectory(tests/carstate)
     # The online test navigator's screen table and start gate (src/game/onlinebot.c, BO-134).
     add_subdirectory(tests/onlinebot)
     # The quick reactions' phrases and d-pad mapping (src/game/react.h, BO-352).
