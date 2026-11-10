@@ -71,6 +71,8 @@ extern void xbox_InputPanicStop(int wait_ms);
 #include "usb/ohci.h"
 #include "region.h"                   /* BO3_VA: NTSC-U or PAL addresses */
 #include "controls.h"                 /* input.control_scheme (BO-106) */
+#include "carstate.h"                 /* the shared car snapshot (motion platform, force feedback) */
+#include "simhub.h"                   /* BO3_SIMHUB_UDP: the snapshot sent to SimHub (simhub_udp.c) */
 #include "install.h"                  /* the data root, --install, --version (BO-103) */
 #include "languages.h"                /* the Language row's languages */
 #include "fatal.h"                    /* a start-up failure the player sees */
@@ -826,10 +828,16 @@ static void drive_log(void)
     uint32_t hud = g_ebx, car, k;
     const uint8_t *st;
 
-    if (!s_dl_f || !g_xbox_mem_offset || hud < 0x10000u || hud >= 0x08000000u)
+    if ((!s_dl_f && !bo3_carstate_wanted()) || !g_xbox_mem_offset
+            || hud < 0x10000u || hud >= 0x08000000u)
         return;
     car = HD_M32(hud + 0x2C);
     if (car < 0x10000u || car >= 0x08000000u)
+        return;
+    /* A mark runs only its first handler, so this is the one place the HUD's update is used from. */
+    bo3_carstate_sample();                  /* the shared car snapshot (carstate.c) */
+    bo3_telemetry_sample(car);              /* BO3_TELEMETRY (telemetry.c), after it: it prints the snapshot's values */
+    if (!s_dl_f)
         return;
     /* The first open port's XINPUT_STATE as XInputGetState left it
      * (sub_001B57E0: four records of 0x20, state 2 = open, the XINPUT_STATE
@@ -849,14 +857,14 @@ static void drive_log_start(void)
 {
     const char *path = getenv("BO3_DRIVE_LOG");
 
-    if (!path || !*path)
-        return;
-    s_dl_f = fopen(path, "w");
-    if (!s_dl_f) {
-        fprintf(stderr, "BO3_DRIVE_LOG: cannot write %s\n", path);
-        return;
+    bo3_telemetry_start(bo3_flips);
+    if (path && *path) {
+        s_dl_f = fopen(path, "w");
+        if (!s_dl_f)
+            fprintf(stderr, "BO3_DRIVE_LOG: cannot write %s\n", path);
     }
-    recomp_patch_on_mark("drive_log", drive_log);
+    if (s_dl_f || bo3_carstate_wanted())
+        recomp_patch_on_mark("drive_log", drive_log);
 }
 
 /* BO3_PACE_LOG=<file>: one line per flip the title emits (the "uw_flip"
@@ -4107,6 +4115,8 @@ int main(int argc, char **argv)
     hud_dump_start();
     hud_mon_start();
     fx_at_start();
+    bo3_wheel_feed_start();             /* the wheel spring's car feed: asks for the snapshot, so before drive_log_start */
+    bo3_simhub_start();                 /* BO3_SIMHUB_UDP (simhub_udp.c): asks for the snapshot too, so before drive_log_start */
     drive_log_start();
     pace_log_start();
     /* BO-106: input.control_scheme (controls.c). */
@@ -4117,6 +4127,8 @@ int main(int argc, char **argv)
     bo3_autopilot_start(bo3_flips);
     /* graphics.softbody (softbody.c). */
     bo3_softbody_start(bo3_flips);
+    /* The shared car snapshot's collision mark: after softbody's, whose handler calls it too. */
+    bo3_carstate_start(bo3_flips);
     /* BO-133: interface.menu_entry (menuentry.c). */
     bo3_menu_entry_start();
     /* The MODS page in Settings (modsmenu.c): only with a mod folder in use. */
